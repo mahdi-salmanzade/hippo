@@ -151,6 +151,7 @@ type messagesRequest struct {
 	Messages  []wireMessage `json:"messages"`
 	MaxTokens int           `json:"max_tokens"`
 	System    string        `json:"system,omitempty"`
+	Stream    bool          `json:"stream,omitempty"`
 }
 
 type contentBlock struct {
@@ -245,10 +246,11 @@ func (p *provider) Call(ctx context.Context, c hippo.Call) (*hippo.Response, err
 	}, nil
 }
 
-// Stream is not yet implemented. A later pass will wire SSE via
-// internal/sse; for now, callers receive ErrNotImplemented.
+// Stream opens a streaming Messages request and returns a channel of
+// incremental hippo.StreamChunk values. Implementation is in
+// streaming.go alongside the tool-call reassembler.
 func (p *provider) Stream(ctx context.Context, c hippo.Call) (<-chan hippo.StreamChunk, error) {
-	return nil, hippo.ErrNotImplemented
+	return p.stream(ctx, c)
 }
 
 // buildRequestBody maps a hippo.Call into the Anthropic Messages API
