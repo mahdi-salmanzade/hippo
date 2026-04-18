@@ -2,6 +2,13 @@ module github.com/mahdi-salmanzade/hippo
 
 go 1.23.0
 
+// Deps are pinned to versions that compile on Go 1.23, our declared
+// minimum. The latest modernc.org/sqlite, modernc.org/libc, and
+// golang.org/x/sys releases require Go 1.25+; unpinning them would
+// break the CI matrix (1.23, 1.24) and lock out users on slightly
+// older toolchains.
+//
+// Unpin when the v0.2 cycle bumps our floor to 1.25.
 require modernc.org/sqlite v1.36.1
 
 require (
