@@ -15,18 +15,21 @@
 // The top-level type is Brain. Construct one with New and the functional
 // options in options.go, then issue Calls against it:
 //
+//	store, err := sqlite.Open("hippo.db")
+//	if err != nil { /* ... */ }
+//
 //	b, err := hippo.New(
 //	    hippo.WithProvider(anthropic.New(os.Getenv("ANTHROPIC_API_KEY"))),
-//	    hippo.WithMemory(sqlite.Open("hippo.db")),
+//	    hippo.WithMemory(store),
 //	    hippo.WithBudget(budget.Daily(5.00)),
 //	)
 //	if err != nil { /* ... */ }
 //	defer b.Close()
 //
 //	resp, err := b.Call(ctx, hippo.Call{
-//	    Task:    hippo.TaskGenerate,
-//	    Prompt:  "Summarise today's standup notes.",
-//	    UseMemory: hippo.MemoryScopeRecent,
+//	    Task:      hippo.TaskGenerate,
+//	    Prompt:    "Summarise today's standup notes.",
+//	    UseMemory: hippo.MemoryScope{Mode: hippo.MemoryScopeRecent},
 //	})
 //
 // See the examples/ directory for runnable end-to-end samples.
