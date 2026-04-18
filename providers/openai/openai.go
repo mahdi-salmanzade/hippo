@@ -29,7 +29,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"net/http"
 	"sort"
 	"strings"
@@ -223,12 +222,41 @@ type inputMessage struct {
 	Content string `json:"content"`
 }
 
+// inputFunctionCall echoes a prior tool call back to the Responses
+// API on a follow-up request. "arguments" must be a JSON-encoded
+// string (not an object) per the API shape.
+type inputFunctionCall struct {
+	Type      string `json:"type"`  // always "function_call"
+	CallID    string `json:"call_id"`
+	Name      string `json:"name"`
+	Arguments string `json:"arguments"`
+}
+
+// inputFunctionCallOutput feeds a tool's output back on a
+// follow-up request. "output" is the plain string the tool returned.
+type inputFunctionCallOutput struct {
+	Type   string `json:"type"` // always "function_call_output"
+	CallID string `json:"call_id"`
+	Output string `json:"output"`
+}
+
+// wireTool is one entry in the request's top-level tools array.
+// strict:true enforces schema-compliant argument generation.
+type wireTool struct {
+	Type        string          `json:"type"` // always "function"
+	Name        string          `json:"name"`
+	Description string          `json:"description,omitempty"`
+	Parameters  json.RawMessage `json:"parameters,omitempty"`
+	Strict      bool            `json:"strict,omitempty"`
+}
+
 type responseRequest struct {
 	Model           string          `json:"model"`
 	Input           json.RawMessage `json:"input"`
 	Instructions    string          `json:"instructions,omitempty"`
 	MaxOutputTokens int             `json:"max_output_tokens,omitempty"`
 	Stream          bool            `json:"stream,omitempty"`
+	Tools           []wireTool      `json:"tools,omitempty"`
 }
 
 type responseContentBlock struct {
@@ -236,11 +264,19 @@ type responseContentBlock struct {
 	Text string `json:"text,omitempty"`
 }
 
+// responseOutputItem covers all four output-item types we care about:
+// "message" (role + content blocks), "reasoning" (summary blocks),
+// and "function_call" (call_id + name + arguments string).
 type responseOutputItem struct {
 	Type    string                 `json:"type"`
 	Role    string                 `json:"role,omitempty"`
 	Content []responseContentBlock `json:"content,omitempty"`
 	Summary []responseContentBlock `json:"summary,omitempty"`
+	// function_call fields:
+	ID        string `json:"id,omitempty"`      // the item id, not call_id
+	CallID    string `json:"call_id,omitempty"` // what hippo.ToolCall.ID gets
+	Name      string `json:"name,omitempty"`
+	Arguments string `json:"arguments,omitempty"` // JSON-encoded string
 }
 
 type responseInputTokensDetails struct {
@@ -289,10 +325,6 @@ func (p *provider) Call(ctx context.Context, c hippo.Call) (*hippo.Response, err
 		maxTokens = 4096
 	}
 
-	if len(c.Tools) > 0 {
-		slog.Debug("openai: tool calls not supported in Pass 5; ignoring Call.Tools")
-	}
-
 	req, err := p.buildRequestBody(c, model, maxTokens)
 	if err != nil {
 		return nil, err
@@ -319,7 +351,7 @@ func (p *provider) Call(ctx context.Context, c hippo.Call) (*hippo.Response, err
 	}
 
 	var text, thinking strings.Builder
-	sawToolCall := false
+	var toolCalls []hippo.ToolCall
 	for _, item := range rr.Output {
 		switch item.Type {
 		case "message":
@@ -334,12 +366,24 @@ func (p *provider) Call(ctx context.Context, c hippo.Call) (*hippo.Response, err
 					thinking.WriteString(block.Text)
 				}
 			}
-		case "tool_call", "function_call":
-			sawToolCall = true
+		case "function_call", "tool_call":
+			// The Responses API emits arguments as a JSON-encoded
+			// string; pass it through as RawMessage. An empty
+			// arguments field (tool takes no input) becomes "{}".
+			args := item.Arguments
+			if args == "" {
+				args = "{}"
+			}
+			id := item.CallID
+			if id == "" {
+				id = item.ID
+			}
+			toolCalls = append(toolCalls, hippo.ToolCall{
+				ID:        id,
+				Name:      item.Name,
+				Arguments: json.RawMessage(args),
+			})
 		}
-	}
-	if sawToolCall {
-		slog.Warn("openai: response contains tool calls but Pass 5 does not send tools; dropping")
 	}
 
 	rate, ratesOK := budget.DefaultPricing().Lookup("openai", rr.Model)
@@ -357,8 +401,9 @@ func (p *provider) Call(ctx context.Context, c hippo.Call) (*hippo.Response, err
 	}
 
 	return &hippo.Response{
-		Text:     text.String(),
-		Thinking: thinking.String(),
+		Text:      text.String(),
+		Thinking:  thinking.String(),
+		ToolCalls: toolCalls,
 		Usage: hippo.Usage{
 			InputTokens:  rr.Usage.InputTokens,
 			OutputTokens: rr.Usage.OutputTokens,
@@ -380,28 +425,93 @@ func (p *provider) Stream(ctx context.Context, c hippo.Call) (<-chan hippo.Strea
 }
 
 // buildRequestBody maps a hippo.Call into the Responses request shape.
-// System-role messages are folded into the top-level "instructions"
-// field (per OpenAI's Responses API convention). User/assistant
-// messages go in "input" as a JSON array. Call.Prompt alone is sent as
-// a bare JSON string, the simplest allowed input shape.
 //
-// If both Call.Prompt and Call.Messages are set, Messages wins and
-// Prompt is appended as a trailing user message (matches the Anthropic
-// adapter's behaviour).
+// Message translation:
+//
+//   - system-role messages fold into the top-level "instructions"
+//     field (the Responses API's native system channel).
+//   - plain user/assistant messages serialise as {role, content}
+//     entries in the input array.
+//   - assistant messages with ToolCalls serialise as an optional
+//     assistant message (when Content is non-empty) followed by one
+//     function_call input-item per tool call. arguments is
+//     JSON-encoded-as-string per API shape.
+//   - role:"tool" messages become function_call_output items
+//     correlated by call_id.
+//
+// Tool translation: each hippo.Tool maps to one {type:"function",
+// name, description, parameters, strict:true} entry in the top-level
+// tools array. strict:true enforces the schema on argument generation.
+//
+// Prompt-only Calls (no Messages) send Input as a bare JSON string —
+// the cheapest shape the API accepts. Adding tools or any Messages
+// entry switches to the array form.
 func (p *provider) buildRequestBody(c hippo.Call, model string, maxTokens int) (responseRequest, error) {
 	var systemParts []string
-	var msgs []inputMessage
-	for _, m := range c.Messages {
-		if m.Role == "system" {
-			systemParts = append(systemParts, m.Content)
-			continue
+	var items []json.RawMessage
+
+	appendJSON := func(v any) error {
+		raw, err := json.Marshal(v)
+		if err != nil {
+			return fmt.Errorf("openai: marshal input item: %w", err)
 		}
-		msgs = append(msgs, inputMessage{Role: m.Role, Content: m.Content})
+		items = append(items, raw)
+		return nil
 	}
 
+	for _, m := range c.Messages {
+		switch {
+		case m.Role == "system":
+			systemParts = append(systemParts, m.Content)
+
+		case m.Role == "tool":
+			if err := appendJSON(inputFunctionCallOutput{
+				Type:   "function_call_output",
+				CallID: m.ToolCallID,
+				Output: m.Content,
+			}); err != nil {
+				return responseRequest{}, err
+			}
+
+		case m.Role == "assistant" && len(m.ToolCalls) > 0:
+			if m.Content != "" {
+				if err := appendJSON(inputMessage{Role: "assistant", Content: m.Content}); err != nil {
+					return responseRequest{}, err
+				}
+			}
+			for _, tc := range m.ToolCalls {
+				args := tc.Arguments
+				if len(args) == 0 {
+					args = json.RawMessage(`{}`)
+				}
+				if err := appendJSON(inputFunctionCall{
+					Type:      "function_call",
+					CallID:    tc.ID,
+					Name:      tc.Name,
+					Arguments: string(args),
+				}); err != nil {
+					return responseRequest{}, err
+				}
+			}
+
+		default:
+			if err := appendJSON(inputMessage{Role: m.Role, Content: m.Content}); err != nil {
+				return responseRequest{}, err
+			}
+		}
+	}
+
+	tools, err := translateTools(c.Tools)
+	if err != nil {
+		return responseRequest{}, err
+	}
+
+	// Choose input shape:
+	//   - No items + no tools + prompt present: bare JSON string
+	//   - Otherwise: array form with the trailing Prompt (if any)
+	//     appended as a user message.
 	var input json.RawMessage
-	if len(msgs) == 0 {
-		// Prompt-only path: send the bare string.
+	if len(items) == 0 && len(tools) == 0 {
 		if c.Prompt == "" {
 			return responseRequest{},
 				errors.New("openai: Call requires Prompt or at least one user/assistant Message")
@@ -413,11 +523,13 @@ func (p *provider) buildRequestBody(c hippo.Call, model string, maxTokens int) (
 		input = promptJSON
 	} else {
 		if c.Prompt != "" {
-			msgs = append(msgs, inputMessage{Role: "user", Content: c.Prompt})
+			if err := appendJSON(inputMessage{Role: "user", Content: c.Prompt}); err != nil {
+				return responseRequest{}, err
+			}
 		}
-		arr, err := json.Marshal(msgs)
+		arr, err := json.Marshal(items)
 		if err != nil {
-			return responseRequest{}, fmt.Errorf("openai: marshal messages: %w", err)
+			return responseRequest{}, fmt.Errorf("openai: marshal input array: %w", err)
 		}
 		input = arr
 	}
@@ -427,7 +539,35 @@ func (p *provider) buildRequestBody(c hippo.Call, model string, maxTokens int) (
 		Input:           input,
 		Instructions:    strings.Join(systemParts, "\n\n"),
 		MaxOutputTokens: maxTokens,
+		Tools:           tools,
 	}, nil
+}
+
+// translateTools maps hippo.Tool instances into Responses-API tool
+// entries. strict:true is the default (per spec); a nil schema is
+// replaced with an empty object schema so the request isn't rejected.
+func translateTools(tools []hippo.Tool) ([]wireTool, error) {
+	if len(tools) == 0 {
+		return nil, nil
+	}
+	out := make([]wireTool, 0, len(tools))
+	for _, t := range tools {
+		if t == nil {
+			continue
+		}
+		schema := t.Schema()
+		if len(schema) == 0 {
+			schema = json.RawMessage(`{"type":"object"}`)
+		}
+		out = append(out, wireTool{
+			Type:        "function",
+			Name:        t.Name(),
+			Description: t.Description(),
+			Parameters:  schema,
+			Strict:      true,
+		})
+	}
+	return out, nil
 }
 
 // retryBaseDelay is the base backoff delay between retry attempts.
