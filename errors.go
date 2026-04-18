@@ -26,4 +26,9 @@ var (
 	// ErrMemoryUnavailable is returned when a Call requests memory but
 	// no Memory has been attached to the Brain.
 	ErrMemoryUnavailable = errors.New("hippo: memory not configured")
+
+	// ErrNotImplemented is returned by stubs that have not yet been
+	// implemented. Production code should never see this; it exists so
+	// scaffolding can compile with a typed error instead of panicking.
+	ErrNotImplemented = errors.New("hippo: not implemented")
 )

@@ -17,14 +17,6 @@ Alternatives that are lighter: `flag` (stdlib), `github.com/peterbourgon/ff`,
 or a hand-rolled subcommand dispatcher. Worth deciding before v0.4 so the
 CLI shape reflects the choice.
 
-## 6. Tool-call argument shape
-
-`ToolCall.Arguments` is `[]byte` (raw JSON) in the current design so
-providers can pass through without re-serialising. Callers then
-`json.Unmarshal` into their own struct. Alternative: `map[string]any`, more
-convenient for ad-hoc use but slower and allocates more. I leaned toward
-raw bytes; open to changing.
-
 ## 7. `MemoryScope` duplication
 
 There are two scope types:
