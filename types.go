@@ -1,6 +1,9 @@
 package hippo
 
-import "time"
+import (
+	"encoding/json"
+	"time"
+)
 
 // TaskKind classifies the intent of a Call so the router can pick an
 // appropriate provider/model. Task kinds are coarse on purpose: routing
@@ -114,26 +117,21 @@ type Message struct {
 	Name string
 }
 
-// Tool declares a callable function the model may invoke.
-type Tool struct {
-	// Name is a unique identifier for the tool.
-	Name string
-	// Description is a natural-language summary shown to the model.
-	Description string
-	// JSONSchema is the JSON Schema document describing the tool's input.
-	// It is kept as raw bytes so providers can forward it verbatim.
-	JSONSchema []byte
-}
+// Tool is defined in tool.go.
 
 // ToolCall is a model-emitted request to invoke a Tool.
 type ToolCall struct {
 	// ID is the provider-assigned identifier, echoed back on the tool
-	// response message.
+	// response message. Ollama, which does not assign its own IDs,
+	// gets a synthetic "tool_<index>" id from the adapter.
 	ID string
-	// Name is the Tool.Name that was called.
+	// Name is the Tool.Name() that was called.
 	Name string
-	// Arguments is the raw JSON arguments object.
-	Arguments []byte
+	// Arguments is the raw JSON arguments object the model produced.
+	// It conforms to the Tool's Schema() by the time the model emits
+	// it (providers enforce schema-aware generation); hippo does not
+	// re-validate before passing it to the Tool.
+	Arguments json.RawMessage
 }
 
 // StreamChunkType discriminates StreamChunk variants. Each chunk sets
@@ -155,6 +153,20 @@ const (
 	// them and emits one StreamChunkToolCall per call once the arguments
 	// JSON is complete. Consumers never see partial tool arguments.
 	StreamChunkToolCall StreamChunkType = "tool_call"
+	// StreamChunkToolResult is emitted after hippo has executed a
+	// tool in response to a StreamChunkToolCall. ToolCallID matches
+	// the ToolCall.ID of the call that produced it; ToolResult
+	// carries the executed result. For any given ToolCallID the
+	// StreamChunkToolCall arrives strictly before its
+	// StreamChunkToolResult — consumers can rely on this ordering
+	// when threading a UI.
+	//
+	// Tool results are NOT fed back through the provider via the
+	// stream — that happens internally before the next provider
+	// turn begins. These chunks are purely for the consumer's
+	// observability (showing "tool X returned Y" in a UI, logging
+	// a trace, etc).
+	StreamChunkToolResult StreamChunkType = "tool_result"
 	// StreamChunkUsage is the terminal chunk on a successful stream.
 	// Carries the authoritative Usage plus the provider, model, and
 	// computed cost. The stream channel closes after this chunk is
@@ -188,6 +200,13 @@ type StreamChunk struct {
 	// ToolCall is set on StreamChunkToolCall chunks. One tool call per
 	// chunk; parallel tool calls arrive as separate chunks.
 	ToolCall *ToolCall
+
+	// ToolResult is set on StreamChunkToolResult chunks. ToolCallID
+	// is the ID of the StreamChunkToolCall that produced it, so
+	// consumers can render "tool X (call id Y) returned Z" without
+	// tracking positional order.
+	ToolResult *ToolResult
+	ToolCallID string
 
 	// Usage, CostUSD, Provider, Model are populated on the terminal
 	// StreamChunkUsage chunk. Usage is the provider-reported token
@@ -236,6 +255,13 @@ type Response struct {
 	MemoryHits []string
 	// ReceivedAt is when the response was finalised locally.
 	ReceivedAt time.Time
+	// Err is non-nil when the Call completed but something
+	// non-fatal happened worth reporting to the caller — most
+	// commonly ErrMaxToolHopsExceeded, which means the response is
+	// still usable but the tool-execution loop stopped before the
+	// model was done. Distinct from the Call's own return error,
+	// which represents a total failure (no usable Response at all).
+	Err error
 }
 
 // ModelInfo describes one model offered by a Provider.

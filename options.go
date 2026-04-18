@@ -20,7 +20,31 @@ type config struct {
 	// defaultModel is used when a Call neither pins a Model nor supplies
 	// enough context for the router to choose.
 	defaultModel string
+
+	// tools is the immutable tool registry wired via WithTools. Nil
+	// when no tools are configured, which disables the tool-call
+	// loop entirely.
+	tools *ToolSet
+
+	// maxToolHops caps the number of (tool-call → execute → feed-back)
+	// rounds any single Call may traverse. Default 10. After the cap
+	// is hit the Call returns with Response.Err =
+	// ErrMaxToolHopsExceeded and whatever the final turn produced.
+	maxToolHops int
+
+	// maxParallelTools caps how many tools execute concurrently
+	// within one turn when the provider returns multiple tool calls
+	// at once. Default 4; set to 1 for fully sequential execution.
+	maxParallelTools int
 }
+
+// Default option values. Exported as vars rather than consts so a
+// future WithDefault helper can read them without duplicating the
+// numbers here; tests that assert the defaults reference these.
+const (
+	defaultMaxToolHops      = 10
+	defaultMaxParallelTools = 4
+)
 
 // WithProvider registers an LLM provider. Call WithProvider once per
 // provider; order determines the preference used by the default router
@@ -75,6 +99,64 @@ func WithLogger(l *slog.Logger) Option {
 func WithDefaultModel(model string) Option {
 	return func(c *config) error {
 		c.defaultModel = model
+		return nil
+	}
+}
+
+// WithTools registers the tools the Brain makes available to every
+// Call. Tools are static for the Brain's lifetime; there is no
+// registry-mutation API on purpose.
+//
+// A single call that supplies WithTools more than once (or mixes
+// with NewToolSet manually) overrides the earlier registration —
+// the last WithTools wins. The validation that rejects duplicate
+// or malformed names happens here, so the error surfaces from
+// hippo.New rather than the first dispatched Call.
+//
+// Pass zero tools to leave tool calling off.
+func WithTools(tools ...Tool) Option {
+	return func(c *config) error {
+		if len(tools) == 0 {
+			c.tools = nil
+			return nil
+		}
+		ts, err := NewToolSet(tools...)
+		if err != nil {
+			return err
+		}
+		c.tools = ts
+		return nil
+	}
+}
+
+// WithMaxToolHops caps how many rounds of (tool-call → execute →
+// feed-back) a single Call may traverse. Default: 10. After the
+// cap is hit, the Call returns the final provider response with
+// Response.Err = ErrMaxToolHopsExceeded — the response body is
+// still usable; callers can inspect ToolCalls and continue manually.
+//
+// n <= 0 is treated as "use default".
+func WithMaxToolHops(n int) Option {
+	return func(c *config) error {
+		if n > 0 {
+			c.maxToolHops = n
+		}
+		return nil
+	}
+}
+
+// WithMaxParallelTools caps how many tools execute concurrently
+// within one turn when the provider returns multiple tool calls.
+// Default: 4. Setting to 1 forces sequential execution, useful
+// when the tools share a limited resource (database connection,
+// rate-limited API) that a fan-out would exhaust.
+//
+// n <= 0 is treated as "use default".
+func WithMaxParallelTools(n int) Option {
+	return func(c *config) error {
+		if n > 0 {
+			c.maxParallelTools = n
+		}
 		return nil
 	}
 }
