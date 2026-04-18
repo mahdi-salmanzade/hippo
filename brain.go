@@ -113,17 +113,8 @@ func (b *Brain) Call(ctx context.Context, c Call) (*Response, error) {
 
 	// Memory hydration. Recall runs with the call's ctx so a
 	// cancelled Call doesn't leave a hanging query.
-	var memoryHits []Record
-	if c.UseMemory.Mode != MemoryScopeNone && b.cfg.memory != nil {
-		query, q := memoryQueryFromScope(c.UseMemory, c.Prompt)
-		hits, err := b.cfg.memory.Recall(ctx, query, q)
-		if err != nil {
-			b.logger.Warn("hippo: memory recall failed (serving without memory)", "err", err)
-		} else {
-			memoryHits = hits
-			enriched = injectMemory(enriched, hits)
-		}
-	}
+	memoryHits := b.hydrateMemory(ctx, c)
+	enriched = injectMemory(enriched, memoryHits)
 
 	resp, err := p.Call(ctx, enriched)
 	if err != nil {
@@ -188,6 +179,24 @@ func (b *Brain) decide(ctx context.Context, c Call) (Decision, error) {
 		return Decision{}, ErrPrivacyViolation
 	}
 	return Decision{Provider: p.Name()}, nil
+}
+
+// hydrateMemory recalls memory records for c and returns them, or nil
+// if memory is not configured, the call opted out, or Recall failed.
+// A failed recall is logged at Warn — memory is a helper, not a hard
+// dependency — and an empty slice is returned. Call and Stream both
+// use this so the hydration behaviour stays identical across paths.
+func (b *Brain) hydrateMemory(ctx context.Context, c Call) []Record {
+	if c.UseMemory.Mode == MemoryScopeNone || b.cfg.memory == nil {
+		return nil
+	}
+	query, q := memoryQueryFromScope(c.UseMemory, c.Prompt)
+	hits, err := b.cfg.memory.Recall(ctx, query, q)
+	if err != nil {
+		b.logger.Warn("hippo: memory recall failed (serving without memory)", "err", err)
+		return nil
+	}
+	return hits
 }
 
 // providerByName returns the registered provider with the given
