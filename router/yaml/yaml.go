@@ -19,12 +19,19 @@ import (
 	"math"
 	"os"
 	"strings"
+	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/mahdi-salmanzade/hippo"
 
 	yamlv3 "gopkg.in/yaml.v3"
 )
+
+// pollInterval is how often the watch goroutine stats the policy
+// file. It is a var (not const) so tests can compress it to
+// milliseconds. Production code must not mutate it.
+var pollInterval = 2 * time.Second
 
 //go:embed default_policy.yaml
 var defaultPolicyYAML []byte
@@ -101,13 +108,20 @@ func WithLogger(l *slog.Logger) Option {
 }
 
 // router implements hippo.Router. The *Policy pointer is swapped
-// atomically so Route is lock-free.
+// atomically so Route is lock-free, and the hot-reload goroutine (if
+// any) is stopped via the stop channel. *router is also an io.Closer
+// — callers who enabled WithWatch should type-assert and Close to
+// stop the watcher goroutine on shutdown.
 type router struct {
-	path   string
-	policy atomic.Pointer[Policy]
-	watch  bool
-	logger *slog.Logger
-	stop   chan struct{}
+	path     string
+	policy   atomic.Pointer[Policy]
+	watch    bool
+	logger   *slog.Logger
+	stop     chan struct{}
+	stopOnce sync.Once
+	// lastMtime is the last-observed mtime of the policy file;
+	// guarded by the watcher goroutine (only one writer).
+	lastMtime time.Time
 }
 
 // Load parses a YAML policy file from path. When path is empty the
@@ -129,8 +143,12 @@ func Load(path string, opts ...Option) (hippo.Router, error) {
 		return nil, err
 	}
 	r.path = path
-	// TODO(pass3.5): spin up the hot-reload watcher when r.watch is
-	// true. Split into the next commit to keep diffs focused.
+	if r.watch && path != "" {
+		if stat, err := os.Stat(path); err == nil {
+			r.lastMtime = stat.ModTime()
+		}
+		go r.watchLoop()
+	}
 	return r, nil
 }
 
@@ -168,6 +186,60 @@ func parsePolicy(data []byte) (*Policy, error) {
 
 // Name returns "yaml".
 func (r *router) Name() string { return "yaml" }
+
+// Close stops the hot-reload watcher goroutine (no-op if watch was
+// not enabled). Idempotent and safe to call from any goroutine.
+// hippo.Router does not require Close; type-assert the Load() return
+// to io.Closer when you want to release the watcher.
+func (r *router) Close() error {
+	r.stopOnce.Do(func() { close(r.stop) })
+	return nil
+}
+
+// watchLoop runs in its own goroutine when WithWatch(true) is set.
+// It polls the policy file's mtime and atomically swaps the Policy
+// pointer on change. Parse failures during reload are logged at Warn
+// and the previous policy remains authoritative — a broken edit
+// should not take down a running Brain.
+func (r *router) watchLoop() {
+	ticker := time.NewTicker(pollInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-r.stop:
+			return
+		case <-ticker.C:
+			r.checkAndReload()
+		}
+	}
+}
+
+func (r *router) checkAndReload() {
+	stat, err := os.Stat(r.path)
+	if err != nil {
+		r.logger.Warn("router/yaml: stat failed during reload; keeping current policy",
+			"path", r.path, "err", err)
+		return
+	}
+	if !stat.ModTime().After(r.lastMtime) {
+		return // unchanged
+	}
+	data, err := os.ReadFile(r.path)
+	if err != nil {
+		r.logger.Warn("router/yaml: read failed during reload; keeping current policy",
+			"path", r.path, "err", err)
+		return
+	}
+	newPolicy, err := parsePolicy(data)
+	if err != nil {
+		r.logger.Warn("router/yaml: parse failed during reload; keeping current policy",
+			"path", r.path, "err", err)
+		return
+	}
+	r.policy.Store(newPolicy)
+	r.lastMtime = stat.ModTime()
+	r.logger.Info("router/yaml: policy reloaded", "path", r.path)
+}
 
 // Route picks a Provider+Model for c.
 //

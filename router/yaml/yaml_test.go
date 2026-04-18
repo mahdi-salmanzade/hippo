@@ -3,7 +3,11 @@ package yaml
 import (
 	"context"
 	"errors"
+	"io"
+	"os"
+	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/mahdi-salmanzade/hippo"
 )
@@ -289,3 +293,136 @@ func contains(s, sub string) bool {
 	}
 	return false
 }
+
+// fastPoll compresses the watcher's poll interval for the duration
+// of a test. Production code must treat pollInterval as a constant.
+func fastPoll(t *testing.T) {
+	t.Helper()
+	old := pollInterval
+	pollInterval = 20 * time.Millisecond
+	t.Cleanup(func() { pollInterval = old })
+}
+
+func TestHotReload(t *testing.T) {
+	fastPoll(t)
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "policy.yaml")
+	initial := []byte(`
+tasks:
+  generate:
+    privacy: cloud_ok
+    prefer:
+      - pA:modelA
+`)
+	if err := os.WriteFile(path, initial, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	r, err := Load(path, WithWatch(true))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if c, ok := r.(io.Closer); ok {
+			_ = c.Close()
+		}
+	})
+
+	pA := &fakeProvider{name: "pA", privacy: hippo.PrivacyCloudOK, cost: 0.01}
+	pB := &fakeProvider{name: "pB", privacy: hippo.PrivacyCloudOK, cost: 0.01}
+	providers := []hippo.Provider{pA, pB}
+
+	d, err := r.Route(context.Background(), hippo.Call{Task: hippo.TaskGenerate}, providers, 1.00)
+	if err != nil {
+		t.Fatalf("initial Route: %v", err)
+	}
+	if d.Provider != "pA" {
+		t.Fatalf("initial provider = %q, want pA", d.Provider)
+	}
+
+	// Mutate the file: swap prefer to pB.
+	// Bump mtime explicitly because some filesystems round writes
+	// to the nearest second; adding a second beyond initial is safe.
+	updated := []byte(`
+tasks:
+  generate:
+    privacy: cloud_ok
+    prefer:
+      - pB:modelB
+`)
+	if err := os.WriteFile(path, updated, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	future := time.Now().Add(2 * time.Second)
+	if err := os.Chtimes(path, future, future); err != nil {
+		t.Fatal(err)
+	}
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		d, err := r.Route(context.Background(), hippo.Call{Task: hippo.TaskGenerate}, providers, 1.00)
+		if err == nil && d.Provider == "pB" {
+			return // reload observed
+		}
+		time.Sleep(30 * time.Millisecond)
+	}
+	t.Fatal("policy was not reloaded within 2s")
+}
+
+func TestHotReloadKeepsPolicyOnParseFailure(t *testing.T) {
+	fastPoll(t)
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "policy.yaml")
+	initial := []byte(`
+tasks:
+  generate:
+    privacy: cloud_ok
+    prefer:
+      - pA:modelA
+`)
+	if err := os.WriteFile(path, initial, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	r, err := Load(path, WithWatch(true))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if c, ok := r.(io.Closer); ok {
+			_ = c.Close()
+		}
+	})
+
+	pA := &fakeProvider{name: "pA", privacy: hippo.PrivacyCloudOK, cost: 0.01}
+	providers := []hippo.Provider{pA}
+
+	// Overwrite with broken YAML.
+	if err := os.WriteFile(path, []byte("not: [valid: yaml"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	future := time.Now().Add(2 * time.Second)
+	_ = os.Chtimes(path, future, future)
+
+	// Give the watcher several poll cycles to notice.
+	time.Sleep(200 * time.Millisecond)
+
+	// The original policy should still be serving.
+	d, err := r.Route(context.Background(), hippo.Call{Task: hippo.TaskGenerate}, providers, 1.00)
+	if err != nil {
+		t.Fatalf("Route after bad reload: %v", err)
+	}
+	if d.Provider != "pA" {
+		t.Errorf("provider = %q, want pA (parse failure should keep prior policy)", d.Provider)
+	}
+}
+
+// verify *router implements io.Closer at compile time.
+var _ io.Closer = (*router)(nil)
+
+// useErrorsForLint keeps errors imported even if the only
+// consumers happen to live in build-tag-guarded files later.
+var _ = errors.New
+
