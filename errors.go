@@ -31,4 +31,23 @@ var (
 	// implemented. Production code should never see this; it exists so
 	// scaffolding can compile with a typed error instead of panicking.
 	ErrNotImplemented = errors.New("hippo: not implemented")
+
+	// ErrAuthentication is returned when a provider rejects credentials
+	// (HTTP 401 / 403). Wrap it with fmt.Errorf to preserve the
+	// provider's message; callers match via errors.Is.
+	ErrAuthentication = errors.New("hippo: authentication failed")
+
+	// ErrRateLimit is returned when a provider signals the caller
+	// should back off (HTTP 429). Providers retry internally; this
+	// surfaces only when the retry budget is exhausted.
+	ErrRateLimit = errors.New("hippo: rate limited")
+
+	// ErrModelNotFound is returned when the requested model is
+	// unknown to the provider (HTTP 400 with an "invalid model" body,
+	// or 404 on endpoints that use that convention).
+	ErrModelNotFound = errors.New("hippo: model not found")
+
+	// ErrProviderUnavailable is returned for transient provider-side
+	// failures (HTTP 5xx) after the retry budget is exhausted.
+	ErrProviderUnavailable = errors.New("hippo: provider unavailable")
 )
