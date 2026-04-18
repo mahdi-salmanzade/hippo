@@ -48,7 +48,7 @@ func main() {
     b, err := hippo.New(
         hippo.WithProvider(anthropic.New(os.Getenv("ANTHROPIC_API_KEY"))),
         hippo.WithMemory(store),
-        hippo.WithBudget(budget.Daily(5.00)),
+        hippo.WithBudget(budget.New(budget.WithCeiling(5.00))),
     )
     if err != nil { panic(err) }
     defer b.Close()

@@ -46,20 +46,6 @@ func New(opts ...Option) hippo.BudgetTracker {
 	return t
 }
 
-// Daily is a backwards-compatibility shim: equivalent to
-// New(WithCeiling(limitUSD)). Kept so examples/routing compiles
-// without touching it in this commit.
-//
-// Deprecated: use New(WithCeiling(limitUSD)) directly.
-func Daily(limitUSD float64) hippo.BudgetTracker {
-	return New(WithCeiling(limitUSD))
-}
-
-// Unlimited is a backwards-compatibility shim: equivalent to New().
-//
-// Deprecated: use New() directly.
-func Unlimited() hippo.BudgetTracker { return New() }
-
 // tracker is the in-memory BudgetTracker implementation.
 type tracker struct {
 	mu         sync.Mutex
