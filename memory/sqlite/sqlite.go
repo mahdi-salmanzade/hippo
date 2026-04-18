@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/mahdi-salmanzade/hippo"
@@ -288,12 +289,176 @@ func newULID() (string, error) {
 	return string(out[:]), nil
 }
 
-// Recall is a stub until Pass 2.4 lands.
+// defaultRecallLimit is used when hippo.MemoryQuery.Limit is zero.
+const defaultRecallLimit = 10
+
+// Recall returns records matching the MemoryQuery filters, ordered by
+// FTS5 bm25 relevance when query is non-empty or by timestamp DESC
+// otherwise. See hippo.Memory.
+//
+// Filters compose with AND. Tags match is "at least one of" — a
+// record with tag "billing" matches a query with Tags=["billing",
+// "refactor"].
 func (s *store) Recall(ctx context.Context, query string, q hippo.MemoryQuery) ([]hippo.Record, error) {
-	_ = ctx
-	_ = query
-	_ = q
-	return nil, hippo.ErrNotImplemented
+	limit := q.Limit
+	if limit <= 0 {
+		limit = defaultRecallLimit
+	}
+
+	var (
+		sb   strings.Builder
+		args []any
+	)
+
+	// Base columns and FROM clause. When the caller supplied a text
+	// query we JOIN the FTS5 virtual table and rank by bm25; when
+	// empty we skip the JOIN entirely and fall back to recency order.
+	textSearch := strings.TrimSpace(query) != ""
+	if textSearch {
+		sb.WriteString(`
+			SELECT m.id, m.kind, m.timestamp, m.content, m.importance
+			FROM memories m
+			JOIN memories_fts fts ON fts.rowid = m.rowid
+			WHERE memories_fts MATCH ?`)
+		args = append(args, buildFTSQuery(query))
+	} else {
+		sb.WriteString(`
+			SELECT m.id, m.kind, m.timestamp, m.content, m.importance
+			FROM memories m
+			WHERE 1=1`)
+	}
+
+	if len(q.Kinds) > 0 {
+		sb.WriteString(" AND m.kind IN (")
+		for i, k := range q.Kinds {
+			if i > 0 {
+				sb.WriteByte(',')
+			}
+			sb.WriteByte('?')
+			args = append(args, string(k))
+		}
+		sb.WriteByte(')')
+	}
+
+	if len(q.Tags) > 0 {
+		sb.WriteString(" AND m.id IN (SELECT memory_id FROM tags WHERE tag IN (")
+		for i, t := range q.Tags {
+			if i > 0 {
+				sb.WriteByte(',')
+			}
+			sb.WriteByte('?')
+			args = append(args, t)
+		}
+		sb.WriteString("))")
+	}
+
+	if !q.Since.IsZero() {
+		sb.WriteString(" AND m.timestamp >= ?")
+		args = append(args, q.Since.UnixNano())
+	}
+	if !q.Until.IsZero() {
+		sb.WriteString(" AND m.timestamp <= ?")
+		args = append(args, q.Until.UnixNano())
+	}
+	if q.MinImportance > 0 {
+		sb.WriteString(" AND m.importance >= ?")
+		args = append(args, q.MinImportance)
+	}
+
+	if textSearch {
+		sb.WriteString(" ORDER BY bm25(memories_fts)")
+	} else {
+		sb.WriteString(" ORDER BY m.timestamp DESC")
+	}
+	sb.WriteString(" LIMIT ?")
+	args = append(args, limit)
+
+	rows, err := s.db.QueryContext(ctx, sb.String(), args...)
+	if err != nil {
+		return nil, fmt.Errorf("memory/sqlite: recall query: %w", err)
+	}
+	defer rows.Close()
+
+	var records []hippo.Record
+	for rows.Next() {
+		var (
+			rec    hippo.Record
+			kind   string
+			tsNano int64
+		)
+		if err := rows.Scan(&rec.ID, &kind, &tsNano, &rec.Content, &rec.Importance); err != nil {
+			return nil, fmt.Errorf("memory/sqlite: recall scan: %w", err)
+		}
+		rec.Kind = hippo.MemoryKind(kind)
+		rec.Timestamp = time.Unix(0, tsNano)
+		records = append(records, rec)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("memory/sqlite: recall iter: %w", err)
+	}
+
+	if err := s.loadTags(ctx, records); err != nil {
+		return nil, err
+	}
+	return records, nil
+}
+
+// loadTags populates the Tags field of each record by issuing a single
+// follow-up query across all record IDs. For the typical limit=10
+// case this is one extra roundtrip; worth it to keep Recall's SELECT
+// simple.
+func (s *store) loadTags(ctx context.Context, records []hippo.Record) error {
+	if len(records) == 0 {
+		return nil
+	}
+	var sb strings.Builder
+	sb.WriteString("SELECT memory_id, tag FROM tags WHERE memory_id IN (")
+	args := make([]any, 0, len(records))
+	byID := make(map[string]int, len(records))
+	for i, r := range records {
+		if i > 0 {
+			sb.WriteByte(',')
+		}
+		sb.WriteByte('?')
+		args = append(args, r.ID)
+		byID[r.ID] = i
+	}
+	sb.WriteByte(')')
+
+	rows, err := s.db.QueryContext(ctx, sb.String(), args...)
+	if err != nil {
+		return fmt.Errorf("memory/sqlite: load tags: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var id, tag string
+		if err := rows.Scan(&id, &tag); err != nil {
+			return fmt.Errorf("memory/sqlite: load tags scan: %w", err)
+		}
+		if idx, ok := byID[id]; ok {
+			records[idx].Tags = append(records[idx].Tags, tag)
+		}
+	}
+	return rows.Err()
+}
+
+// buildFTSQuery turns user-provided search text into an FTS5 query
+// string by treating each whitespace-separated token as an AND'd
+// phrase. Double quotes inside tokens are escaped by doubling, which
+// is FTS5's quoting rule. This keeps us safe from FTS5 operator
+// injection (NOT, OR, NEAR, column filters) without sacrificing the
+// natural "multi-word keyword search" UX.
+func buildFTSQuery(query string) string {
+	fields := strings.Fields(query)
+	if len(fields) == 0 {
+		return ""
+	}
+	parts := make([]string, 0, len(fields))
+	for _, f := range fields {
+		parts = append(parts, `"`+strings.ReplaceAll(f, `"`, `""`)+`"`)
+	}
+	return strings.Join(parts, " ")
 }
 
 // Prune is a stub until Pass 2.5 lands.
