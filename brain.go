@@ -37,17 +37,20 @@ func New(opts ...Option) (*Brain, error) {
 
 // Call dispatches c to a provider and returns the response.
 //
-// The flow — in Pass 3 form — is:
+// Pass 3 flow:
 //
-//  1. Selection. If a Router is configured, Route picks the
-//     provider+model (and checks privacy / cost caps). Otherwise the
-//     first registered provider is used with a privacy check.
-//  2. Dispatch. The selected provider handles the Call. The Brain
-//     backfills Response.Provider and Response.Model from the
-//     Decision if the provider didn't already set them.
+//  1. Selection. Router picks provider+model + cost estimate.
+//     Without a router, the first registered provider is used.
+//  2. Budget gate. If the estimated cost exceeds either
+//     Call.MaxCostUSD or the BudgetTracker's Remaining(), Call
+//     returns ErrBudgetExceeded before the provider is contacted.
+//  3. Dispatch. Provider serves the request.
+//  4. Charge. After a successful call, BudgetTracker.Charge records
+//     the real usage. Charge errors are logged, not surfaced —
+//     accounting gaps should not fail a call that already succeeded.
 //
-// Memory hydration and budget enforcement layer in on top of this in
-// the next two commits.
+// Memory hydration and episode recording layer in on top of this in
+// the next commit.
 func (b *Brain) Call(ctx context.Context, c Call) (*Response, error) {
 	if len(b.cfg.providers) == 0 {
 		return nil, ErrNoProviderAvailable
@@ -61,6 +64,22 @@ func (b *Brain) Call(ctx context.Context, c Call) (*Response, error) {
 	p := providerByName(b.cfg.providers, decision.Provider)
 	if p == nil {
 		return nil, fmt.Errorf("hippo: router picked unregistered provider %q", decision.Provider)
+	}
+
+	// Budget gate — belt-and-suspenders against the router. The
+	// router already applied the same ceiling, but a Brain without a
+	// Router still gets enforcement here, and a hand-tuned
+	// Router.Route that skipped the budget check is caught.
+	if b.cfg.budget != nil {
+		remaining := b.cfg.budget.Remaining()
+		if decision.EstimatedCostUSD > remaining {
+			return nil, fmt.Errorf("%w: estimate $%.6f > remaining $%.6f",
+				ErrBudgetExceeded, decision.EstimatedCostUSD, remaining)
+		}
+	}
+	if c.MaxCostUSD > 0 && decision.EstimatedCostUSD > c.MaxCostUSD {
+		return nil, fmt.Errorf("%w: estimate $%.6f > Call.MaxCostUSD $%.6f",
+			ErrBudgetExceeded, decision.EstimatedCostUSD, c.MaxCostUSD)
 	}
 
 	enriched := c
@@ -80,6 +99,16 @@ func (b *Brain) Call(ctx context.Context, c Call) (*Response, error) {
 	}
 	if resp.Model == "" {
 		resp.Model = decision.Model
+	}
+
+	// Charge real usage. Unknown pricing is a warning, not a failure
+	// — hippo prefers serving under-priced calls to blocking on a
+	// pricing-table gap.
+	if b.cfg.budget != nil {
+		if err := b.cfg.budget.Charge(resp.Provider, resp.Model, resp.Usage); err != nil {
+			b.logger.Warn("hippo: budget charge failed", "err", err,
+				"provider", resp.Provider, "model", resp.Model)
+		}
 	}
 
 	return resp, nil
