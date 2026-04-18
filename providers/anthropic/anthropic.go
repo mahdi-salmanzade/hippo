@@ -120,7 +120,7 @@ func (p *provider) EstimateCost(c hippo.Call) (float64, error) {
 	if c.Model != "" {
 		model = c.Model
 	}
-	pr, ok := pricing[model]
+	pr, ok := lookupPricing(model)
 	if !ok {
 		return 0, fmt.Errorf("anthropic: unknown model %q", model)
 	}

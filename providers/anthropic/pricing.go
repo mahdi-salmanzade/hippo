@@ -1,6 +1,10 @@
 package anthropic
 
-import "github.com/mahdi-salmanzade/hippo"
+import (
+	"strings"
+
+	"github.com/mahdi-salmanzade/hippo"
+)
 
 // defaultModel is used when WithModel is not supplied and the incoming
 // Call does not pin a model. Opus is hippo's out-of-the-box "just works"
@@ -62,12 +66,34 @@ var modelCatalog = []hippo.ModelInfo{
 	},
 }
 
+// lookupPricing resolves a model id to a modelPricing entry.
+//
+// Anthropic's Messages API often echoes back a dated model id like
+// "claude-haiku-4-5-20250930" when the request was made against the
+// alias "claude-haiku-4-5". We match the longest pricing-table key
+// that is a prefix of model, so either form resolves correctly.
+func lookupPricing(model string) (modelPricing, bool) {
+	if p, ok := pricing[model]; ok {
+		return p, true
+	}
+	var bestKey string
+	for k := range pricing {
+		if strings.HasPrefix(model, k) && len(k) > len(bestKey) {
+			bestKey = k
+		}
+	}
+	if bestKey == "" {
+		return modelPricing{}, false
+	}
+	return pricing[bestKey], true
+}
+
 // computeCost returns the USD cost of a response with the given token
 // counts against model's pricing entry. Models unknown to the table
 // return 0 and a false ok — callers should surface that to the user
 // rather than silently pricing at zero.
 func computeCost(model string, inputTokens, outputTokens, cacheCreationTokens, cacheReadTokens int) (cost float64, ok bool) {
-	p, ok := pricing[model]
+	p, ok := lookupPricing(model)
 	if !ok {
 		return 0, false
 	}

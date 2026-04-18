@@ -313,6 +313,23 @@ func TestCallReturnsUnavailableOn5xxAfterRetries(t *testing.T) {
 	}
 }
 
+func TestLookupPricingHandlesDatedModelIDs(t *testing.T) {
+	// Anthropic often echoes "claude-haiku-4-5-20250930" when the
+	// request used "claude-haiku-4-5". Prefix-match must resolve it.
+	got, ok := lookupPricing("claude-haiku-4-5-20250930")
+	if !ok {
+		t.Fatal("lookupPricing returned ok=false for dated haiku id")
+	}
+	want := pricing["claude-haiku-4-5"]
+	if got != want {
+		t.Errorf("lookupPricing = %+v, want %+v", got, want)
+	}
+
+	if _, ok := lookupPricing("some-other-model-99"); ok {
+		t.Error("lookupPricing returned ok=true for unknown model")
+	}
+}
+
 func TestStreamReturnsNotImplemented(t *testing.T) {
 	pr, _ := New(WithAPIKey("k"))
 	ch, err := pr.Stream(context.Background(), hippo.Call{Prompt: "hi"})
