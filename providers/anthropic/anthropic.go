@@ -134,8 +134,8 @@ func (p *provider) EstimateCost(c hippo.Call) (float64, error) {
 		output = 1024
 	}
 	const perMillion = 1_000_000.0
-	return float64(inputTokens)*pr.inputPerMTok/perMillion +
-		float64(output)*pr.outputPerMTok/perMillion, nil
+	return float64(inputTokens)*pr.InputPerMtok/perMillion +
+		float64(output)*pr.OutputPerMtok/perMillion, nil
 }
 
 // Wire-format types for the Messages API. These are package-private so

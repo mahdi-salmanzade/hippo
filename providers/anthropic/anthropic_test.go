@@ -315,18 +315,35 @@ func TestCallReturnsUnavailableOn5xxAfterRetries(t *testing.T) {
 
 func TestLookupPricingHandlesDatedModelIDs(t *testing.T) {
 	// Anthropic often echoes "claude-haiku-4-5-20250930" when the
-	// request used "claude-haiku-4-5". Prefix-match must resolve it.
+	// request used "claude-haiku-4-5". Prefix-match (implemented in
+	// budget.Lookup, consumed here) must resolve it.
 	got, ok := lookupPricing("claude-haiku-4-5-20250930")
 	if !ok {
 		t.Fatal("lookupPricing returned ok=false for dated haiku id")
 	}
-	want := pricing["claude-haiku-4-5"]
+	want, _ := lookupPricing("claude-haiku-4-5")
 	if got != want {
 		t.Errorf("lookupPricing = %+v, want %+v", got, want)
 	}
 
 	if _, ok := lookupPricing("some-other-model-99"); ok {
 		t.Error("lookupPricing returned ok=true for unknown model")
+	}
+}
+
+func TestComputeCostMatchesBudgetRates(t *testing.T) {
+	// computeCost is the Anthropic-specific cost path (separate
+	// cache_write bucket). Verify it computes against the canonical
+	// budget table, not a duplicate local one.
+	cost, ok := computeCost("claude-haiku-4-5", 10, 5, 2, 3)
+	if !ok {
+		t.Fatal("computeCost returned ok=false for known model")
+	}
+	// Haiku: in $1, out $5, cache_write $1.25, cache_read $0.10 per Mtok.
+	// 10e-6 + 5*5e-6 + 2*1.25e-6 + 3*0.10e-6 = 3.78e-5
+	const want = 3.78e-5
+	if diff := cost - want; diff > 1e-9 || diff < -1e-9 {
+		t.Errorf("computeCost = %v, want %v", cost, want)
 	}
 }
 
