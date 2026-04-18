@@ -115,7 +115,8 @@ func (b *Brain) Call(ctx context.Context, c Call) (*Response, error) {
 	// cancelled Call doesn't leave a hanging query.
 	var memoryHits []Record
 	if c.UseMemory.Mode != MemoryScopeNone && b.cfg.memory != nil {
-		hits, err := b.cfg.memory.Recall(ctx, c.Prompt, memoryQueryFromScope(c.UseMemory))
+		query, q := memoryQueryFromScope(c.UseMemory, c.Prompt)
+		hits, err := b.cfg.memory.Recall(ctx, query, q)
 		if err != nil {
 			b.logger.Warn("hippo: memory recall failed (serving without memory)", "err", err)
 		} else {
@@ -211,25 +212,36 @@ func (b *Brain) Stream(ctx context.Context, c Call) (<-chan StreamChunk, error) 
 
 // memoryQueryFromScope translates a user-intent MemoryScope (what a
 // Call asks for) into a concrete backend MemoryQuery (retrieval
-// parameters). The defaults here are conservative — callers who need
-// finer control can still build a MemoryQuery themselves and call
-// Memory.Recall directly.
-func memoryQueryFromScope(s MemoryScope) MemoryQuery {
+// parameters) plus the full-text query string Recall should use.
+//
+// Mode semantics:
+//   - Recent: "what happened lately" — empty query string, time
+//     window, ordered by recency.
+//   - ByTags: "records with these tags" — empty query string, tag
+//     filter, ordered by recency.
+//   - Full: "search everything relevant to the prompt" — prompt
+//     feeds FTS5, no time filter, broader limit.
+//
+// The prompt is only used when Full mode asks for content matching.
+// For Recent and ByTags, passing the prompt to Recall would turn a
+// recency/tag lookup into an AND of every prompt token against
+// record contents, which almost never matches.
+func memoryQueryFromScope(s MemoryScope, prompt string) (string, MemoryQuery) {
 	switch s.Mode {
 	case MemoryScopeRecent:
-		return MemoryQuery{
+		return "", MemoryQuery{
 			Since: time.Now().Add(-24 * time.Hour),
 			Limit: 5,
 		}
 	case MemoryScopeByTags:
-		return MemoryQuery{
+		return "", MemoryQuery{
 			Tags:  s.Tags,
 			Limit: 10,
 		}
 	case MemoryScopeFull:
-		return MemoryQuery{Limit: 20}
+		return prompt, MemoryQuery{Limit: 20}
 	default: // MemoryScopeNone — caller shouldn't reach here, but be safe.
-		return MemoryQuery{}
+		return "", MemoryQuery{}
 	}
 }
 
