@@ -33,6 +33,17 @@ type ProviderPricing struct {
 	// its pricing. Prefix-match handles dated id variants like
 	// "claude-haiku-4-5-20250930".
 	Models map[string]ModelPricing `yaml:"models"`
+	// ZeroCost, when true, tells Lookup that this provider's
+	// inference is free for every model, registered or not. Unknown
+	// model ids fall through to a zero ModelPricing with ok=true
+	// rather than the usual (zero, false) "price unknown" signal.
+	//
+	// This exists for Ollama: users install their own models, so any
+	// complete registry is impossible, and every installed model
+	// prices at $0. Without this flag, budget.Charge would log a
+	// noisy "unknown pricing" warning on every Ollama call for
+	// models the user happens to run that we haven't listed.
+	ZeroCost bool `yaml:"zero_cost,omitempty"`
 }
 
 // ModelPricing is the per-million-token pricing for one model plus a
@@ -83,10 +94,18 @@ func (t *PricingTable) Lookup(provider, model string) (ModelPricing, bool) {
 			bestKey = k
 		}
 	}
-	if bestKey == "" {
-		return ModelPricing{}, false
+	if bestKey != "" {
+		return pp.Models[bestKey], true
 	}
-	return pp.Models[bestKey], true
+	if pp.ZeroCost {
+		// Fallthrough for zero-cost providers (Ollama): unknown
+		// model ids return an all-zero ModelPricing with ok=true so
+		// budget.Charge silently records a $0 spend instead of
+		// warning on every call for a locally-installed model the
+		// YAML table doesn't happen to list.
+		return ModelPricing{}, true
+	}
+	return ModelPricing{}, false
 }
 
 // Models returns the model ids registered under provider. Order is

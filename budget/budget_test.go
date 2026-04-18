@@ -152,6 +152,50 @@ func TestWithPricingOverride(t *testing.T) {
 	}
 }
 
+func TestPricingLookupOllamaZeroCostFallsThrough(t *testing.T) {
+	p := DefaultPricing()
+	// Registered Ollama model — exact hit with real context window.
+	r, ok := p.Lookup("ollama", "llama3.3:70b")
+	if !ok {
+		t.Fatal("ollama llama3.3:70b not resolved")
+	}
+	if r.ContextWindow <= 0 {
+		t.Errorf("registered ollama model has ContextWindow=%d, want > 0", r.ContextWindow)
+	}
+	if r.InputPerMtok != 0 || r.OutputPerMtok != 0 {
+		t.Errorf("ollama rates = %+v, want all zero", r)
+	}
+
+	// Unregistered Ollama model — zero_cost fallback kicks in, ok=true
+	// with zero values so budget.Charge records $0 rather than warning.
+	r2, ok2 := p.Lookup("ollama", "some-random-model-the-user-pulled:latest")
+	if !ok2 {
+		t.Fatal("ollama zero_cost fallback did not trigger; unknown model returned ok=false")
+	}
+	if r2 != (ModelPricing{}) {
+		t.Errorf("ollama fallback returned %+v, want zero ModelPricing", r2)
+	}
+
+	// Unregistered model for a non-zero-cost provider still returns
+	// ok=false — the fallback is ollama-specific.
+	if _, ok := p.Lookup("anthropic", "no-such-model"); ok {
+		t.Error("anthropic unknown model returned ok=true; zero-cost semantics should not apply")
+	}
+}
+
+func TestChargeUnknownOllamaModelDoesNotWarn(t *testing.T) {
+	b := New()
+	// Parallels TestChargeUnknownModelDoesNotBlock but asserts the
+	// happier path for ollama: err is nil, not ErrUnknownPricing.
+	err := b.Charge("ollama", "phi4:14b", hippo.Usage{InputTokens: 100, OutputTokens: 50})
+	if err != nil {
+		t.Errorf("ollama Charge returned %v, want nil (zero-cost fallthrough)", err)
+	}
+	if got := b.Spent(); got != 0 {
+		t.Errorf("Spent() = %v, want 0 after ollama charge", got)
+	}
+}
+
 func TestPricingLookupHandlesDatedModelIds(t *testing.T) {
 	p := DefaultPricing()
 	r, ok := p.Lookup("anthropic", "claude-haiku-4-5-20250930")

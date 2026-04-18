@@ -62,3 +62,31 @@ providers:
         cached_input_per_mtok: 0.275
         context_window: 200000
         supports_reasoning: true
+
+  ollama:
+    # Local inference — free by definition. zero_cost tells
+    # budget.Lookup to return (ModelPricing{}, true) for any model id,
+    # registered or not, so users running a locally-pulled model we
+    # haven't catalogued here don't get a "price unknown" warning on
+    # every call. Context windows below are best-known values for the
+    # stock variants; users can override via WithModel and the
+    # provider's dynamic Models() path reads installed tags from
+    # /api/tags at runtime.
+    zero_cost: true
+    models:
+      "llama3.3:70b":
+        input_per_mtok: 0
+        output_per_mtok: 0
+        context_window: 131072
+      "qwen2.5-coder:32b":
+        input_per_mtok: 0
+        output_per_mtok: 0
+        context_window: 32768
+      "mistral-small":
+        input_per_mtok: 0
+        output_per_mtok: 0
+        context_window: 32768
+      "gpt-oss:120b":
+        input_per_mtok: 0
+        output_per_mtok: 0
+        context_window: 131072
