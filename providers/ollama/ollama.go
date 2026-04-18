@@ -237,13 +237,30 @@ type chatRequest struct {
 	Stream    bool          `json:"stream"`
 	KeepAlive string        `json:"keep_alive,omitempty"`
 	Options   *chatOptions  `json:"options,omitempty"`
+	Tools     []wireTool    `json:"tools,omitempty"`
+}
+
+// wireTool is one entry in the request's top-level tools array.
+// Ollama uses the same "type: function" outer envelope as OpenAI's
+// Chat Completions API (older than Responses), with parameters as
+// the JSON Schema for the tool's inputs.
+type wireTool struct {
+	Type     string       `json:"type"` // always "function"
+	Function wireFunction `json:"function"`
+}
+
+type wireFunction struct {
+	Name        string          `json:"name"`
+	Description string          `json:"description,omitempty"`
+	Parameters  json.RawMessage `json:"parameters,omitempty"`
 }
 
 type chatMessage struct {
-	Role      string          `json:"role"`
-	Content   string          `json:"content"`
-	ToolCalls []chatToolCall  `json:"tool_calls,omitempty"`
-	ToolName  string          `json:"tool_name,omitempty"` // some ollama versions echo this
+	Role       string         `json:"role"`
+	Content    string         `json:"content"`
+	ToolCalls  []chatToolCall `json:"tool_calls,omitempty"`
+	ToolName   string         `json:"tool_name,omitempty"`    // some Ollama versions echo this
+	ToolCallID string         `json:"tool_call_id,omitempty"` // for role:"tool" result messages
 }
 
 type chatToolCall struct {
@@ -278,13 +295,44 @@ type chatResponse struct {
 	EvalDuration       int64 `json:"eval_duration,omitempty"`
 }
 
-// buildRequest maps a hippo.Call into a chatRequest. Ollama natively
-// accepts system-role entries in the messages array — no top-level
-// system field — so system messages pass through untouched.
+// buildRequest maps a hippo.Call into a chatRequest.
+//
+// Message translation:
+//
+//   - system, user, assistant (plain) messages pass through
+//     untouched — Ollama accepts system natively in the messages
+//     array, no top-level hoisting needed.
+//   - assistant messages with ToolCalls serialise with tool_calls
+//     populated (and content kept if the model emitted both text
+//     and a tool call in the same turn).
+//   - role:"tool" messages become Ollama's tool-result messages
+//     with tool_call_id for correlation. Note Ollama doesn't
+//     assign its own ToolCall IDs (we synthesise "tool_<i>"), so
+//     this correlation is round-tripped with hippo's own ids.
+//
+// Tool translation: each hippo.Tool maps to one tools[] entry shaped
+// as {type:"function", function:{name, description, parameters}}.
 func (p *provider) buildRequest(c hippo.Call, model string, maxTokens int, stream bool) (chatRequest, error) {
 	var msgs []chatMessage
 	for _, m := range c.Messages {
-		msgs = append(msgs, chatMessage{Role: m.Role, Content: m.Content})
+		wm := chatMessage{Role: m.Role, Content: m.Content}
+		if len(m.ToolCalls) > 0 {
+			wm.ToolCalls = make([]chatToolCall, 0, len(m.ToolCalls))
+			for _, tc := range m.ToolCalls {
+				args := tc.Arguments
+				if len(args) == 0 {
+					args = json.RawMessage(`{}`)
+				}
+				var call chatToolCall
+				call.Function.Name = tc.Name
+				call.Function.Arguments = args
+				wm.ToolCalls = append(wm.ToolCalls, call)
+			}
+		}
+		if m.Role == "tool" {
+			wm.ToolCallID = m.ToolCallID
+		}
+		msgs = append(msgs, wm)
 	}
 	if c.Prompt != "" {
 		msgs = append(msgs, chatMessage{Role: "user", Content: c.Prompt})
@@ -292,13 +340,14 @@ func (p *provider) buildRequest(c hippo.Call, model string, maxTokens int, strea
 	if len(msgs) == 0 {
 		return chatRequest{}, errors.New("ollama: Call requires Prompt or at least one Message")
 	}
-	if len(c.Tools) > 0 {
-		slog.Debug("ollama: tool-call request ignored in Pass 7 (tools on request skipped)")
-	}
+
+	tools := translateTools(c.Tools)
+
 	req := chatRequest{
 		Model:    model,
 		Messages: msgs,
 		Stream:   stream,
+		Tools:    tools,
 		Options: &chatOptions{
 			NumPredict: maxTokens,
 		},
@@ -307,6 +356,34 @@ func (p *provider) buildRequest(c hippo.Call, model string, maxTokens int, strea
 		req.KeepAlive = formatKeepAlive(p.keepAlive)
 	}
 	return req, nil
+}
+
+// translateTools maps hippo.Tool instances into Ollama's tools[]
+// array. A nil schema is replaced with {"type":"object"} so Ollama
+// doesn't reject the request; real schemas pass through verbatim.
+func translateTools(tools []hippo.Tool) []wireTool {
+	if len(tools) == 0 {
+		return nil
+	}
+	out := make([]wireTool, 0, len(tools))
+	for _, t := range tools {
+		if t == nil {
+			continue
+		}
+		schema := t.Schema()
+		if len(schema) == 0 {
+			schema = json.RawMessage(`{"type":"object"}`)
+		}
+		out = append(out, wireTool{
+			Type: "function",
+			Function: wireFunction{
+				Name:        t.Name(),
+				Description: t.Description(),
+				Parameters:  schema,
+			},
+		})
+	}
+	return out
 }
 
 // formatKeepAlive renders a duration into Ollama's keep_alive format.
