@@ -16,6 +16,7 @@ import (
 	_ "embed"
 	"fmt"
 	"log/slog"
+	"math"
 	"os"
 	"strings"
 	"sync/atomic"
@@ -168,15 +169,128 @@ func parsePolicy(data []byte) (*Policy, error) {
 // Name returns "yaml".
 func (r *router) Name() string { return "yaml" }
 
-// Route is a stub until Pass 3.4. Returning ErrNotImplemented keeps
-// the package compilable and lets the next commit focus on the
-// selection logic without touching the loader.
+// Route picks a Provider+Model for c.
+//
+// Algorithm:
+//  1. Look up TaskPolicy for c.Task. If absent, return ErrUnknownTask.
+//  2. Compute effective privacy = max(Call.Privacy, TaskPolicy.Privacy).
+//  3. Compute effective cost ceiling = min of non-zero
+//     (TaskPolicy.MaxCostUSD, Call.MaxCostUSD, budget).
+//  4. Walk Prefer, then Fallback. For each "provider:model" slug,
+//     skip if the provider isn't registered, privacy tier is too
+//     weak, or estimated cost exceeds the ceiling.
+//  5. Return the first viable Decision with Reason tagged "preferred"
+//     or "fallback". If both lists exhaust, return
+//     ErrNoRoutableProvider.
+//
+// Route is lock-free: the policy pointer is loaded once atomically
+// and reused for the rest of the call, so a concurrent hot-reload
+// can swap in a new policy without affecting calls already in flight.
 func (r *router) Route(ctx context.Context, c hippo.Call, providers []hippo.Provider, budget float64) (hippo.Decision, error) {
-	_ = ctx
-	_ = c
-	_ = providers
-	_ = budget
-	return hippo.Decision{}, hippo.ErrNotImplemented
+	_ = ctx // reserved for cancellation checks when Route grows more work
+
+	pol := r.policy.Load()
+	if pol == nil {
+		return hippo.Decision{}, hippo.ErrNoRoutableProvider
+	}
+	tp, ok := pol.Tasks[c.Task]
+	if !ok {
+		return hippo.Decision{}, fmt.Errorf("%w: %q", hippo.ErrUnknownTask, c.Task)
+	}
+
+	privacy := c.Privacy
+	if tp.Privacy > privacy {
+		privacy = tp.Privacy
+	}
+	costCap := minNonZero(tp.MaxCostUSD, c.MaxCostUSD, budget)
+
+	if d, ok := r.tryList(c, tp.Prefer, providers, privacy, costCap, "preferred"); ok {
+		return d, nil
+	}
+	if d, ok := r.tryList(c, tp.Fallback, providers, privacy, costCap, "fallback"); ok {
+		return d, nil
+	}
+	return hippo.Decision{}, hippo.ErrNoRoutableProvider
+}
+
+// tryList walks a single preference/fallback list and returns the
+// first viable Decision. Skips the candidate silently for each
+// disqualifier so the caller can fall through to the next list.
+func (r *router) tryList(c hippo.Call, slugs []string, providers []hippo.Provider, minPrivacy hippo.PrivacyTier, costCap float64, reasonTag string) (hippo.Decision, bool) {
+	for _, slug := range slugs {
+		providerName, model, ok := splitSlug(slug)
+		if !ok {
+			r.logger.Warn("router/yaml: malformed slug; skipping", "slug", slug)
+			continue
+		}
+		p := providerByName(providers, providerName)
+		if p == nil {
+			continue // provider not registered
+		}
+		if p.Privacy() < minPrivacy {
+			continue // provider can't meet the privacy requirement
+		}
+		callCopy := c
+		callCopy.Model = model
+		cost, err := p.EstimateCost(callCopy)
+		if err != nil {
+			// Unknown model within a registered provider is a
+			// silent skip — the router tries the next candidate.
+			r.logger.Debug("router/yaml: EstimateCost failed; skipping candidate",
+				"slug", slug, "err", err)
+			continue
+		}
+		if cost > costCap {
+			continue
+		}
+		return hippo.Decision{
+			Provider:         providerName,
+			Model:            model,
+			EstimatedCostUSD: cost,
+			Reason:           reasonTag + " match: " + slug,
+		}, true
+	}
+	return hippo.Decision{}, false
+}
+
+// providerByName returns the registered provider with the given
+// Name() or nil if not present. Linear scan is fine for the small
+// provider sets hippo supports.
+func providerByName(providers []hippo.Provider, name string) hippo.Provider {
+	for _, p := range providers {
+		if p.Name() == name {
+			return p
+		}
+	}
+	return nil
+}
+
+// splitSlug splits "provider:model" — empty on either side is
+// rejected. Model strings may themselves contain colons (e.g. the
+// dated "claude-haiku-4-5-20250930" form), so we split on the first
+// colon only.
+func splitSlug(s string) (provider, model string, ok bool) {
+	i := strings.IndexByte(s, ':')
+	if i <= 0 || i == len(s)-1 {
+		return "", "", false
+	}
+	return s[:i], s[i+1:], true
+}
+
+// minNonZero returns the minimum of the arguments, ignoring values
+// that are zero (treated as "no cap"). If all arguments are zero,
+// returns +Inf — i.e. unlimited.
+func minNonZero(vals ...float64) float64 {
+	m := math.Inf(1)
+	for _, v := range vals {
+		if v <= 0 {
+			continue
+		}
+		if v < m {
+			m = v
+		}
+	}
+	return m
 }
 
 // discardWriter is used as the fallback slog sink; it exists in this
