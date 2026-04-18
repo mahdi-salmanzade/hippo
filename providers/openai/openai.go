@@ -228,6 +228,7 @@ type responseRequest struct {
 	Input           json.RawMessage `json:"input"`
 	Instructions    string          `json:"instructions,omitempty"`
 	MaxOutputTokens int             `json:"max_output_tokens,omitempty"`
+	Stream          bool            `json:"stream,omitempty"`
 }
 
 type responseContentBlock struct {
@@ -371,10 +372,11 @@ func (p *provider) Call(ctx context.Context, c hippo.Call) (*hippo.Response, err
 	}, nil
 }
 
-// Stream is not yet implemented. Pass 6 wires SSE for Responses'
-// event-stream variant; until then callers receive ErrNotImplemented.
+// Stream opens a streaming Responses request and returns a channel of
+// incremental hippo.StreamChunk values. Implementation is in
+// streaming.go.
 func (p *provider) Stream(ctx context.Context, c hippo.Call) (<-chan hippo.StreamChunk, error) {
-	return nil, hippo.ErrNotImplemented
+	return p.stream(ctx, c)
 }
 
 // buildRequestBody maps a hippo.Call into the Responses request shape.
