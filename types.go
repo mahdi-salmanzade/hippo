@@ -136,27 +136,70 @@ type ToolCall struct {
 	Arguments []byte
 }
 
-// StreamChunk is one incremental update from Brain.Stream.
+// StreamChunkType discriminates StreamChunk variants. Each chunk sets
+// exactly one variant, and the Type field tells the consumer which
+// fields to look at. Two of the five types (Usage, Error) are terminal:
+// the stream channel always closes immediately after one of them.
+type StreamChunkType string
+
+const (
+	// StreamChunkText is an incremental text delta. Delta holds the
+	// new text to append to any prior text the consumer has buffered.
+	StreamChunkText StreamChunkType = "text"
+	// StreamChunkThinking is an incremental reasoning/thinking delta
+	// for providers that expose a reasoning trace (Anthropic extended
+	// thinking, OpenAI reasoning summary). Delta holds the new text.
+	StreamChunkThinking StreamChunkType = "thinking"
+	// StreamChunkToolCall is a fully reassembled tool call. Providers
+	// stream tool arguments as partial-JSON fragments; hippo buffers
+	// them and emits one StreamChunkToolCall per call once the arguments
+	// JSON is complete. Consumers never see partial tool arguments.
+	StreamChunkToolCall StreamChunkType = "tool_call"
+	// StreamChunkUsage is the terminal chunk on a successful stream.
+	// Carries the authoritative Usage plus the provider, model, and
+	// computed cost. The stream channel closes after this chunk is
+	// delivered.
+	StreamChunkUsage StreamChunkType = "usage"
+	// StreamChunkError is the terminal chunk on a failed mid-stream.
+	// Error carries the cause. The stream channel closes after this
+	// chunk is delivered. Handshake failures surface as the error
+	// return of Stream/Brain.Stream, not as a StreamChunkError.
+	StreamChunkError StreamChunkType = "error"
+)
+
+// StreamChunk is one incremental update from Brain.Stream or a
+// provider's Stream method. Type identifies the variant; only the
+// fields documented for that variant are populated.
 //
-// Exactly one of Delta, ToolCall, or Err will be set per chunk. Final is
-// true on the terminal chunk, which also carries the authoritative Usage.
+// Each stream emits zero or more non-terminal chunks (Text, Thinking,
+// ToolCall) followed by exactly one terminal chunk (Usage on success,
+// Error on failure). The channel closes after the terminal chunk.
+// Consumers MUST fully drain the channel or cancel the stream's ctx
+// to avoid leaking the provider-side reader goroutine.
 type StreamChunk struct {
-	// Delta is appended text.
+	// Type discriminates the chunk variant. Always set.
+	Type StreamChunkType
+
+	// Delta carries the incremental text for StreamChunkText and
+	// StreamChunkThinking chunks. Deltas are not cumulative — consumers
+	// concatenate them to reconstruct the full text.
 	Delta string
-	// Thinking is appended extended-thinking text, when the provider
-	// supports it.
-	Thinking string
-	// ToolCall is a completed tool call. Providers that stream partial
-	// tool arguments accumulate them internally and emit on completion.
+
+	// ToolCall is set on StreamChunkToolCall chunks. One tool call per
+	// chunk; parallel tool calls arrive as separate chunks.
 	ToolCall *ToolCall
-	// Usage is populated on the terminal chunk.
-	Usage *Usage
-	// CostUSD is populated on the terminal chunk.
-	CostUSD float64
-	// Final is true exactly once per stream.
-	Final bool
-	// Err is set if the stream ended with an error.
-	Err error
+
+	// Usage, CostUSD, Provider, Model are populated on the terminal
+	// StreamChunkUsage chunk. Usage is the provider-reported token
+	// accounting; CostUSD is computed by the Brain (or by the provider
+	// when called directly).
+	Usage    *Usage
+	CostUSD  float64
+	Provider string
+	Model    string
+
+	// Error is set on the terminal StreamChunkError chunk.
+	Error error
 }
 
 // Usage reports token accounting for a Call.
