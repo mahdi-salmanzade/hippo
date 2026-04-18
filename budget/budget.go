@@ -103,20 +103,31 @@ func (t *tracker) Spent() float64 {
 }
 
 // costOf is the inner math: usage × rate, with cached tokens priced
-// at the cheaper cache_read rate. Cache_write is not separately
-// surfaced in hippo.Usage (Anthropic's two cache counters are
-// summed into CachedTokens at the provider layer) so the tracker
-// treats all cached tokens at the read rate. Pass 5 will revisit
-// when cache accounting becomes per-provider.
-func costOf(rate Rate, u hippo.Usage) float64 {
+// at whichever "cached input" rate the provider uses. Anthropic fills
+// CacheReadPerMtok; OpenAI fills CachedInputPerMtok; costOf picks the
+// non-zero one so the unified hippo.Usage.CachedTokens counter works
+// across both dialects.
+//
+// Anthropic also has a CacheWritePerMtok (cache-creation surcharge)
+// that is not surfaced via hippo.Usage. The Anthropic adapter
+// computes the per-call cost itself using the richer bucket counts
+// returned by the Messages API; the budget tracker only sees the
+// coarse InputTokens / OutputTokens / CachedTokens split and so
+// treats every cached token at the read rate. Pass 5 revisits this
+// once we have per-provider cache accounting.
+func costOf(rate ModelPricing, u hippo.Usage) float64 {
 	const perMillion = 1_000_000.0
-	plain := float64(u.InputTokens-u.CachedTokens) * rate.Input / perMillion
+	cachedRate := rate.CacheReadPerMtok
+	if cachedRate == 0 {
+		cachedRate = rate.CachedInputPerMtok
+	}
+	plain := float64(u.InputTokens-u.CachedTokens) * rate.InputPerMtok / perMillion
 	if u.InputTokens < u.CachedTokens {
 		// Defensive: if a provider ever reports more cached than
 		// total input, drop the plain term rather than go negative.
 		plain = 0
 	}
-	cached := float64(u.CachedTokens) * rate.CacheRead / perMillion
-	out := float64(u.OutputTokens) * rate.Output / perMillion
+	cached := float64(u.CachedTokens) * cachedRate / perMillion
+	out := float64(u.OutputTokens) * rate.OutputPerMtok / perMillion
 	return plain + cached + out
 }

@@ -12,63 +12,98 @@ import (
 //go:embed pricing.yaml
 var pricingYAML []byte
 
-// PricingTable maps (provider, model) pairs to USD-per-token rates.
+// PricingTable is the parsed pricing.yaml: provider → model → rate.
+// This is the canonical source for pricing across every provider
+// hippo supports; providers call DefaultPricing().Lookup rather than
+// maintaining their own duplicate tables.
 //
-// Rates are stored per million tokens to match how providers publish
-// their pricing. The canonical source is budget/pricing.yaml, embedded
-// into the binary at build time; WithPricing lets tests or callers
-// override it with a custom table.
+// Lookups are O(1) on exact hits and O(M) for prefix-matched dated
+// model ids, where M is the number of models registered for the
+// target provider. That's small (single digits per provider) so the
+// scan stays cheap enough to do on every Call.
 type PricingTable struct {
-	// Rates is keyed on "provider:model". The nested YAML layout is
-	// flattened into this slug form at parse time so lookup is a
-	// single map access.
-	Rates map[string]Rate
+	// Providers is keyed by Provider.Name() (e.g. "anthropic",
+	// "openai"). The nested Models map holds per-model pricing.
+	Providers map[string]ProviderPricing `yaml:"providers"`
 }
 
-// Rate is the per-million-token pricing for one model.
-type Rate struct {
-	// Input is USD per 1,000,000 input tokens.
-	Input float64 `yaml:"input"`
-	// Output is USD per 1,000,000 output tokens.
-	Output float64 `yaml:"output"`
-	// CacheWrite is USD per 1,000,000 cache-creation input tokens.
-	// Zero means the provider does not surcharge for cache writes.
-	CacheWrite float64 `yaml:"cache_write"`
-	// CacheRead is USD per 1,000,000 cache-read input tokens. Zero
-	// means the provider does not discount cached input.
-	CacheRead float64 `yaml:"cache_read"`
+// ProviderPricing groups a provider's model pricing under one key.
+type ProviderPricing struct {
+	// Models maps a concrete model id (e.g. "claude-haiku-4-5") to
+	// its pricing. Prefix-match handles dated id variants like
+	// "claude-haiku-4-5-20250930".
+	Models map[string]ModelPricing `yaml:"models"`
 }
 
-// Lookup returns the Rate for "provider:model" or the zero Rate with
-// ok=false if the slug is unknown. Callers should treat a missing
-// entry as "price unknown" (best-effort $0) rather than an error —
-// see the Tracker implementation and the Pass 3 spec.
-func (p *PricingTable) Lookup(provider, model string) (Rate, bool) {
-	if p == nil || p.Rates == nil {
-		return Rate{}, false
+// ModelPricing is the per-million-token pricing for one model plus a
+// small amount of capability metadata used by EstimateCost heuristics.
+//
+// The two "cache" fields are kept separate because providers price
+// caching differently:
+//   - Anthropic: CacheReadPerMtok (cheap, 0.1× input) and
+//     CacheWritePerMtok (premium, 1.25× input) are billed independently.
+//   - OpenAI: CachedInputPerMtok is the single cached-input discount
+//     rate; there is no cache-write surcharge on the Responses API.
+//
+// costOf picks whichever cached-rate field is non-zero for the rate,
+// so the unified hippo.Usage.CachedTokens counter works across both.
+type ModelPricing struct {
+	InputPerMtok       float64 `yaml:"input_per_mtok"`
+	OutputPerMtok      float64 `yaml:"output_per_mtok"`
+	CacheReadPerMtok   float64 `yaml:"cache_read_per_mtok,omitempty"`
+	CacheWritePerMtok  float64 `yaml:"cache_write_per_mtok,omitempty"`
+	CachedInputPerMtok float64 `yaml:"cached_input_per_mtok,omitempty"`
+	ContextWindow      int     `yaml:"context_window"`
+	SupportsReasoning  bool    `yaml:"supports_reasoning,omitempty"`
+}
+
+// Lookup returns the ModelPricing for (provider, model). If the exact
+// model id is not registered, Lookup falls back to the longest
+// registered key that is a prefix of model — this is how we tolerate
+// dated variants like "claude-haiku-4-5-20250930" that the Anthropic
+// API echoes back, or "gpt-5-2026-02-15" from OpenAI.
+//
+// An unknown (provider, model) pair returns the zero ModelPricing with
+// ok=false. Callers should treat that as "price unknown" (best-effort
+// $0) rather than a fatal error.
+func (t *PricingTable) Lookup(provider, model string) (ModelPricing, bool) {
+	if t == nil || t.Providers == nil {
+		return ModelPricing{}, false
 	}
-	slug := provider + ":" + model
-	r, ok := p.Rates[slug]
-	if ok {
-		return r, true
+	pp, ok := t.Providers[provider]
+	if !ok {
+		return ModelPricing{}, false
 	}
-	// Tolerate dated model ids (e.g. "claude-haiku-4-5-20250930") by
-	// matching the longest registered model prefix. Anthropic returns
-	// the dated form in its response even when called with the alias.
+	if m, ok := pp.Models[model]; ok {
+		return m, true
+	}
 	var bestKey string
-	prefix := provider + ":"
-	for k := range p.Rates {
-		if !strings.HasPrefix(k, prefix) {
-			continue
-		}
-		if strings.HasPrefix(slug, k) && len(k) > len(bestKey) {
+	for k := range pp.Models {
+		if strings.HasPrefix(model, k) && len(k) > len(bestKey) {
 			bestKey = k
 		}
 	}
 	if bestKey == "" {
-		return Rate{}, false
+		return ModelPricing{}, false
 	}
-	return p.Rates[bestKey], true
+	return pp.Models[bestKey], true
+}
+
+// Models returns the model ids registered under provider. Order is
+// unspecified; callers that need deterministic ordering must sort.
+func (t *PricingTable) Models(provider string) []string {
+	if t == nil || t.Providers == nil {
+		return nil
+	}
+	pp, ok := t.Providers[provider]
+	if !ok {
+		return nil
+	}
+	out := make([]string, 0, len(pp.Models))
+	for k := range pp.Models {
+		out = append(out, k)
+	}
+	return out
 }
 
 var (
@@ -96,18 +131,12 @@ func DefaultPricing() *PricingTable {
 }
 
 // ParsePricing unmarshals a pricing-yaml document into a PricingTable.
-// The input must be the nested provider → model → rate layout used by
+// The input must be the nested providers → models layout used by
 // budget/pricing.yaml.
 func ParsePricing(data []byte) (*PricingTable, error) {
-	var nested map[string]map[string]Rate
-	if err := yaml.Unmarshal(data, &nested); err != nil {
+	var t PricingTable
+	if err := yaml.Unmarshal(data, &t); err != nil {
 		return nil, fmt.Errorf("budget: unmarshal pricing: %w", err)
 	}
-	rates := make(map[string]Rate, len(nested)*4)
-	for provider, models := range nested {
-		for model, rate := range models {
-			rates[provider+":"+model] = rate
-		}
-	}
-	return &PricingTable{Rates: rates}, nil
+	return &t, nil
 }

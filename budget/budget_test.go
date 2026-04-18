@@ -133,8 +133,12 @@ func TestConcurrentCharge(t *testing.T) {
 
 func TestWithPricingOverride(t *testing.T) {
 	custom := &PricingTable{
-		Rates: map[string]Rate{
-			"custom:model-x": {Input: 100.0, Output: 200.0},
+		Providers: map[string]ProviderPricing{
+			"custom": {
+				Models: map[string]ModelPricing{
+					"model-x": {InputPerMtok: 100.0, OutputPerMtok: 200.0},
+				},
+			},
 		},
 	}
 	b := New(WithPricing(custom))
@@ -154,8 +158,42 @@ func TestPricingLookupHandlesDatedModelIds(t *testing.T) {
 	if !ok {
 		t.Fatal("dated haiku id not resolved")
 	}
-	want := p.Rates["anthropic:claude-haiku-4-5"]
+	want := p.Providers["anthropic"].Models["claude-haiku-4-5"]
 	if r != want {
 		t.Errorf("rate = %+v, want %+v", r, want)
+	}
+}
+
+func TestPricingLookupKnowsOpenAI(t *testing.T) {
+	p := DefaultPricing()
+	r, ok := p.Lookup("openai", "gpt-5-nano")
+	if !ok {
+		t.Fatal("openai gpt-5-nano not resolved")
+	}
+	if r.InputPerMtok <= 0 || r.OutputPerMtok <= 0 {
+		t.Errorf("openai gpt-5-nano rates look wrong: %+v", r)
+	}
+	if r.CachedInputPerMtok <= 0 {
+		t.Errorf("openai gpt-5-nano cached_input_per_mtok = %v, want > 0",
+			r.CachedInputPerMtok)
+	}
+}
+
+func TestEstimateCostUsesCachedInputRateForOpenAI(t *testing.T) {
+	b := New()
+	// Pricing table has OpenAI pricing under "cached_input_per_mtok"
+	// (CachedInputPerMtok), not CacheReadPerMtok. costOf must pick
+	// the non-zero rate so cached tokens aren't double-priced at the
+	// full input rate or silently billed at zero.
+	usage := hippo.Usage{InputTokens: 1000, OutputTokens: 100, CachedTokens: 500}
+	cost, err := b.EstimateCost("openai", "gpt-5-nano", usage)
+	if err != nil {
+		t.Fatalf("EstimateCost: %v", err)
+	}
+	// gpt-5-nano: input $0.10/Mtok, output $0.40/Mtok, cached $0.01/Mtok.
+	// plain = 500*0.10/M = 5e-5; cached = 500*0.01/M = 5e-6; out = 100*0.40/M = 4e-5
+	want := 5e-5 + 5e-6 + 4e-5
+	if math.Abs(cost-want) > 1e-12 {
+		t.Errorf("cost = %v, want %v", cost, want)
 	}
 }

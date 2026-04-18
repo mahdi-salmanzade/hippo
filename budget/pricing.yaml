@@ -1,24 +1,65 @@
 # hippo pricing table
 #
-# Rates are USD per 1,000,000 tokens. Nested provider → model → rate
-# for readable diffs when a provider adjusts pricing; the PricingTable
-# parser flattens this into "provider:model" keys at load time.
+# Canonical source for per-model pricing across every provider hippo
+# supports. Providers import this table via budget.DefaultPricing();
+# they must not maintain their own duplicate rate maps.
 #
-# Keep entries sorted alphabetically inside each provider block.
+# Rates are USD per 1,000,000 tokens. ContextWindow is in tokens.
+# supports_reasoning flags models that emit a reasoning trace (OpenAI
+# o-series and gpt-5-thinking; used by EstimateCost to add a buffer for
+# reasoning tokens).
+#
+# Keep entries sorted alphabetically inside each provider's models map.
+#
+# TODO(pre-v0.1.0): verify every non-Anthropic rate against the vendor's
+# pricing page before tagging a release. OpenAI rates below are
+# placeholders pending a live check of platform.openai.com/docs/pricing.
 
-anthropic:
-  claude-haiku-4-5:
-    input: 1.00
-    output: 5.00
-    cache_write: 1.25
-    cache_read: 0.10
-  claude-opus-4-7:
-    input: 15.00
-    output: 75.00
-    cache_write: 18.75
-    cache_read: 1.50
-  claude-sonnet-4-6:
-    input: 3.00
-    output: 15.00
-    cache_write: 3.75
-    cache_read: 0.30
+providers:
+  anthropic:
+    models:
+      claude-haiku-4-5:
+        input_per_mtok: 1.00
+        output_per_mtok: 5.00
+        cache_read_per_mtok: 0.10
+        cache_write_per_mtok: 1.25
+        context_window: 200000
+      claude-opus-4-7:
+        input_per_mtok: 15.00
+        output_per_mtok: 75.00
+        cache_read_per_mtok: 1.50
+        cache_write_per_mtok: 18.75
+        context_window: 200000
+      claude-sonnet-4-6:
+        input_per_mtok: 3.00
+        output_per_mtok: 15.00
+        cache_read_per_mtok: 0.30
+        cache_write_per_mtok: 3.75
+        context_window: 1000000
+
+  openai:
+    models:
+      gpt-5:
+        input_per_mtok: 5.00
+        output_per_mtok: 20.00
+        cached_input_per_mtok: 0.50
+        context_window: 400000
+        supports_reasoning: true
+      gpt-5-mini:
+        input_per_mtok: 1.00
+        output_per_mtok: 4.00
+        cached_input_per_mtok: 0.10
+        context_window: 400000
+        supports_reasoning: true
+      gpt-5-nano:
+        input_per_mtok: 0.10
+        output_per_mtok: 0.40
+        cached_input_per_mtok: 0.01
+        context_window: 400000
+        supports_reasoning: false
+      o4-mini:
+        input_per_mtok: 2.00
+        output_per_mtok: 8.00
+        cached_input_per_mtok: 0.20
+        context_window: 200000
+        supports_reasoning: true
