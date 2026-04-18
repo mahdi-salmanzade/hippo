@@ -13,6 +13,7 @@ tasks:
     privacy: cloud_ok
     prefer:
       - anthropic:claude-haiku-4-5
+      - openai:gpt-5-nano
     max_cost_usd: 0.001
 
   embed:
@@ -25,6 +26,9 @@ tasks:
     prefer:
       - anthropic:claude-sonnet-4-6
       - anthropic:claude-haiku-4-5
+    fallback:
+      - openai:gpt-5-mini
+      - openai:gpt-5-nano
     max_cost_usd: 0.05
 
   protect:
@@ -37,4 +41,7 @@ tasks:
     prefer:
       - anthropic:claude-opus-4-7
       - anthropic:claude-sonnet-4-6
+    fallback:
+      - openai:gpt-5
+      - openai:gpt-5-mini
     max_cost_usd: 0.10
