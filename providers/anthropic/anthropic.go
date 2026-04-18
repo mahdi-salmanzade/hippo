@@ -279,10 +279,11 @@ func (p *provider) buildRequestBody(c hippo.Call, model string, maxTokens int) (
 	}, nil
 }
 
-// retryBaseDelay is the first sleep in the retry schedule. It is a
-// var (not const) so tests can compress it; production code should
-// treat it as a constant.
-var retryBaseDelay = time.Second
+// retryBaseDelay is the base backoff delay between retry attempts.
+// It is a var (not const) so tests can compress it to microseconds;
+// production code must not mutate it. The retry schedule uses this as
+// the first sleep and doubles on each subsequent attempt.
+var retryBaseDelay = 1 * time.Second
 
 // doWithRetry POSTs reqBody to /v1/messages, retrying on 429 and 5xx
 // with exponential backoff (1s, 2s) up to 3 attempts total. Network

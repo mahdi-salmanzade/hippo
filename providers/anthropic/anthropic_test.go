@@ -235,12 +235,20 @@ func TestCallHandlesAuthError(t *testing.T) {
 }
 
 func TestCallHonorsContextCancel(t *testing.T) {
+	// The handler selects on r.Context().Done() first for the happy
+	// case (connection closed mid-request → server context cancels),
+	// with a short fallback so test teardown doesn't stall. Note:
+	// Go's server does not reliably cancel r.Context() during an
+	// in-flight handler when the client cancels — it's cancelled
+	// after the handler returns. The fallback is what actually
+	// bounds cleanup time in practice.
+	const handlerFallback = 300 * time.Millisecond
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Block until the client cancels its request, or a safety
-		// timeout fires so the test tear-down never hangs.
 		select {
 		case <-r.Context().Done():
-		case <-time.After(2 * time.Second):
+			return
+		case <-time.After(handlerFallback):
+			w.WriteHeader(http.StatusGatewayTimeout)
 		}
 	}))
 	t.Cleanup(server.Close)
@@ -248,15 +256,25 @@ func TestCallHonorsContextCancel(t *testing.T) {
 	pr, _ := New(WithAPIKey("k"), WithBaseURL(server.URL))
 	ctx, cancel := context.WithCancel(context.Background())
 	go func() {
-		time.Sleep(50 * time.Millisecond)
+		time.Sleep(30 * time.Millisecond)
 		cancel()
 	}()
+
+	start := time.Now()
 	_, err := pr.Call(ctx, hippo.Call{Prompt: "hi"})
+	elapsed := time.Since(start)
+
 	if err == nil {
 		t.Fatal("expected error on context cancel, got nil")
 	}
 	if !errors.Is(err, context.Canceled) {
 		t.Errorf("err = %v, want wrapping context.Canceled", err)
+	}
+	// Client-side cancellation must be fast regardless of what the
+	// server does — the client does not wait for the server to
+	// acknowledge.
+	if elapsed > 200*time.Millisecond {
+		t.Errorf("Call took %v, expected < 200ms (client-side cancel should be immediate)", elapsed)
 	}
 }
 
