@@ -11,6 +11,23 @@ import (
 // a New function that returns hippo.Provider. The root hippo package does
 // not import any concrete provider: users wire them in from their own
 // main.go via WithProvider, which inverts the dependency direction.
+//
+// # System-role message contract
+//
+// Provider adapters MUST translate Message entries with Role == "system"
+// into the upstream API's native system-prompt mechanism. Each API does
+// this slightly differently (Anthropic: top-level "system" field;
+// OpenAI/Ollama: a system-role entry in the messages array is native;
+// Gemini: "systemInstruction" top-level field; Cohere: "preamble"
+// parameter) — the translation is a ~10-line switch inside each
+// adapter.
+//
+// This matters because hippo.Brain's memory-hydration path injects
+// recalled records as a system-role Message prepended to Call.Messages.
+// An adapter that silently drops the system role would lose the memory
+// context; one that passes it through as a plain user message would
+// pollute the transcript. Always route it to the provider's native
+// system channel.
 type Provider interface {
 	// Name returns a short, stable identifier (e.g. "anthropic").
 	Name() string
