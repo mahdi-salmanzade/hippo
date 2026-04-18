@@ -19,9 +19,7 @@ type Brain struct {
 	// budget handle, shared http.Client, in-flight Call accounting.
 }
 
-// New constructs a Brain from the supplied options. It validates that at
-// least one provider is registered and that the router (if any) is
-// compatible with the registered providers.
+// New constructs a Brain from the supplied options.
 //
 // New never blocks on network I/O; provider authentication is deferred
 // until the first Call.
@@ -34,45 +32,48 @@ func New(opts ...Option) (*Brain, error) {
 			return nil, err
 		}
 	}
-	// TODO: validate at least one provider; install default router if
-	// none; wire budget/memory handles.
 	return &Brain{cfg: c, logger: c.logger}, nil
 }
 
-// Call dispatches c to the provider chosen by the router and returns the
-// full Response. The provided context controls cancellation and deadline;
-// callers are responsible for setting a timeout appropriate to their use.
+// Call dispatches c to a registered provider and returns the response.
 //
-// If Call's UseMemory is non-zero, the Brain queries its Memory backend
-// for relevant records and injects them as additional system-role
-// messages before handing off to the provider.
+// Pass 1 routing is intentionally minimal:
+//   - If no provider is registered, Call returns ErrNoProviderAvailable.
+//   - If more than one provider is registered, the first is used and a
+//     warning is logged. Real router-driven selection arrives in pass 3.
+//   - If c.Privacy requires a stronger tier than the chosen provider
+//     can honor, Call returns ErrPrivacyViolation.
 //
-// Call returns ErrBudgetExceeded if the pre-flight cost estimate exceeds
-// either c.MaxCostUSD or the Brain's BudgetTracker remaining balance.
+// Future passes will layer memory hydration and budget enforcement
+// here; they are no-ops today.
 func (b *Brain) Call(ctx context.Context, c Call) (*Response, error) {
-	_ = ctx
-	_ = c
-	// TODO: route → memory-inject → budget-check → provider.Call →
-	// record usage on budget tracker → optionally persist outcome to
-	// memory → return Response.
-	panic("hippo: Brain.Call not implemented")
+	if len(b.cfg.providers) == 0 {
+		return nil, ErrNoProviderAvailable
+	}
+	if len(b.cfg.providers) > 1 {
+		b.logger.Warn("hippo: multiple providers registered; using first (router arrives in pass 3)",
+			"count", len(b.cfg.providers),
+			"chosen", b.cfg.providers[0].Name(),
+		)
+	}
+	p := b.cfg.providers[0]
+
+	// Provider must offer at least the privacy tier the Call demands.
+	// Tiers are ordered with higher = stricter (see PrivacyTier in
+	// types.go), so p.Privacy() >= c.Privacy is the satisfaction test.
+	if p.Privacy() < c.Privacy {
+		return nil, ErrPrivacyViolation
+	}
+
+	return p.Call(ctx, c)
 }
 
-// Stream is the streaming counterpart to Call. The returned channel
-// delivers StreamChunk values until the stream ends, at which point the
-// channel is closed. The final chunk has Final == true and carries the
-// authoritative Usage and CostUSD.
-//
-// If Stream returns an error, no channel is returned and no stream was
-// opened. In-flight stream errors surface via the Err field of a
-// StreamChunk with Final == true.
+// Stream is the streaming counterpart to Call. Streaming is not wired
+// yet; callers receive ErrNotImplemented.
 func (b *Brain) Stream(ctx context.Context, c Call) (<-chan StreamChunk, error) {
 	_ = ctx
 	_ = c
-	// TODO: same pipeline as Call but forward the provider's stream
-	// channel, accumulating usage on the Brain's budget tracker once the
-	// terminal chunk arrives.
-	panic("hippo: Brain.Stream not implemented")
+	return nil, ErrNotImplemented
 }
 
 // Close releases all resources held by the Brain, including the Memory
