@@ -175,6 +175,11 @@ END;
 //   - rec.Importance is clamped to [0, 1].
 //   - Tag insertion and the memories INSERT happen inside a single
 //     transaction, so a partial write cannot leave tags orphaned.
+//
+// TODO(pass3): persist rec.Source into the metadata JSON column
+// alongside routing metadata (provider, model, cost, latency).
+// TODO(pass4): persist rec.Embedding to a dedicated BLOB column and
+// add an ANN index for semantic retrieval.
 func (s *store) Add(ctx context.Context, rec *hippo.Record) error {
 	if rec == nil {
 		return errors.New("memory/sqlite: Add: rec is nil")
