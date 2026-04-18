@@ -141,9 +141,22 @@ func (p *provider) EstimateCost(c hippo.Call) (float64, error) {
 // Wire-format types for the Messages API. These are package-private so
 // we can evolve them without leaking shape into the hippo public API.
 
+// wireMessage has flexible Content because Anthropic's Messages API
+// accepts either a plain string (the common single-text case) or a
+// typed content-block array (tool_use on assistant turns, tool_result
+// on user turns). Using json.RawMessage lets buildRequestBody choose
+// the cheapest shape per message.
 type wireMessage struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
+	Role    string          `json:"role"`
+	Content json.RawMessage `json:"content"`
+}
+
+// wireTool mirrors Anthropic's tool schema on the request side.
+// input_schema is passed through verbatim from hippo.Tool.Schema().
+type wireTool struct {
+	Name        string          `json:"name"`
+	Description string          `json:"description,omitempty"`
+	InputSchema json.RawMessage `json:"input_schema"`
 }
 
 type messagesRequest struct {
@@ -152,11 +165,38 @@ type messagesRequest struct {
 	MaxTokens int           `json:"max_tokens"`
 	System    string        `json:"system,omitempty"`
 	Stream    bool          `json:"stream,omitempty"`
+	Tools     []wireTool    `json:"tools,omitempty"`
 }
 
-type contentBlock struct {
+// outBlock is a content block hippo emits on the request side. Only
+// the fields relevant to Type are populated per block; omitempty
+// keeps the wire payload clean.
+type outBlock struct {
 	Type string `json:"type"`
-	Text string `json:"text"`
+	// text blocks
+	Text string `json:"text,omitempty"`
+	// tool_use (assistant turn echoing a prior tool call back to
+	// the API on a follow-up request)
+	ID    string          `json:"id,omitempty"`
+	Name  string          `json:"name,omitempty"`
+	Input json.RawMessage `json:"input,omitempty"`
+	// tool_result (user turn feeding a tool's output back)
+	ToolUseID string `json:"tool_use_id,omitempty"`
+	// tool_result's inner content, as a plain string. Anthropic
+	// accepts either a string or an array here; we use string for
+	// simplicity since hippo.ToolResult.Content is already a string.
+	Content string `json:"content,omitempty"`
+	IsError bool   `json:"is_error,omitempty"`
+}
+
+// inBlock is a content block parsed from a response payload.
+// tool_use blocks carry id/name/input; text blocks carry text.
+type inBlock struct {
+	Type  string          `json:"type"`
+	Text  string          `json:"text,omitempty"`
+	ID    string          `json:"id,omitempty"`
+	Name  string          `json:"name,omitempty"`
+	Input json.RawMessage `json:"input,omitempty"`
 }
 
 type wireUsage struct {
@@ -167,13 +207,13 @@ type wireUsage struct {
 }
 
 type messagesResponse struct {
-	ID         string         `json:"id"`
-	Type       string         `json:"type"`
-	Role       string         `json:"role"`
-	Content    []contentBlock `json:"content"`
-	Model      string         `json:"model"`
-	StopReason string         `json:"stop_reason"`
-	Usage      wireUsage      `json:"usage"`
+	ID         string    `json:"id"`
+	Type       string    `json:"type"`
+	Role       string    `json:"role"`
+	Content    []inBlock `json:"content"`
+	Model      string    `json:"model"`
+	StopReason string    `json:"stop_reason"`
+	Usage      wireUsage `json:"usage"`
 }
 
 type errorResponse struct {
@@ -221,9 +261,21 @@ func (p *provider) Call(ctx context.Context, c hippo.Call) (*hippo.Response, err
 	}
 
 	var text strings.Builder
+	var toolCalls []hippo.ToolCall
 	for _, block := range mr.Content {
-		if block.Type == "text" {
+		switch block.Type {
+		case "text":
 			text.WriteString(block.Text)
+		case "tool_use":
+			args := block.Input
+			if len(args) == 0 {
+				args = json.RawMessage(`{}`)
+			}
+			toolCalls = append(toolCalls, hippo.ToolCall{
+				ID:        block.ID,
+				Name:      block.Name,
+				Arguments: append(json.RawMessage(nil), args...),
+			})
 		}
 	}
 
@@ -232,7 +284,8 @@ func (p *provider) Call(ctx context.Context, c hippo.Call) (*hippo.Response, err
 		mr.Usage.CacheCreationInputTokens, mr.Usage.CacheReadInputTokens)
 
 	return &hippo.Response{
-		Text: text.String(),
+		Text:      text.String(),
+		ToolCalls: toolCalls,
 		Usage: hippo.Usage{
 			InputTokens:  mr.Usage.InputTokens,
 			OutputTokens: mr.Usage.OutputTokens,
@@ -254,31 +307,172 @@ func (p *provider) Stream(ctx context.Context, c hippo.Call) (<-chan hippo.Strea
 }
 
 // buildRequestBody maps a hippo.Call into the Anthropic Messages API
-// request shape. System-role messages are folded into the top-level
-// "system" field; user/assistant messages are passed through as-is.
-// Call.Prompt, when set, is appended as a final user-role message.
+// request shape.
+//
+// Message translation:
+//
+//   - system-role messages fold into the top-level "system" field.
+//   - assistant messages with tool calls serialise as a content-block
+//     array mixing text and tool_use blocks. Plain assistant messages
+//     stay as a bare string.
+//   - role:"tool" messages become user turns carrying tool_result
+//     content blocks (with tool_use_id matching the earlier call).
+//     Anthropic has no "tool" role on the wire — tool outputs are
+//     always user turns shaped as tool_result blocks.
+//   - other messages (plain user, plain assistant) serialise as a
+//     bare string for the cheapest possible payload.
+//
+// Tools on the Call translate to the request's top-level tools[]
+// array with input_schema copied verbatim from Tool.Schema().
+//
+// Call.Prompt, when set, is appended as a trailing user message.
 func (p *provider) buildRequestBody(c hippo.Call, model string, maxTokens int) (messagesRequest, error) {
 	var systemParts []string
 	var msgs []wireMessage
-	for _, m := range c.Messages {
-		if m.Role == "system" {
-			systemParts = append(systemParts, m.Content)
-			continue
+
+	// Consecutive role:"tool" messages fold into a single user turn
+	// with all the tool_result blocks together, which is how
+	// Anthropic expects parallel tool-call results to arrive. The
+	// loop flushes on every role change.
+	var pendingResults []outBlock
+	flushResults := func() error {
+		if len(pendingResults) == 0 {
+			return nil
 		}
-		msgs = append(msgs, wireMessage{Role: m.Role, Content: m.Content})
+		content, err := json.Marshal(pendingResults)
+		if err != nil {
+			return fmt.Errorf("anthropic: marshal tool_result blocks: %w", err)
+		}
+		msgs = append(msgs, wireMessage{Role: "user", Content: content})
+		pendingResults = nil
+		return nil
 	}
+
+	for _, m := range c.Messages {
+		switch m.Role {
+		case "system":
+			if err := flushResults(); err != nil {
+				return messagesRequest{}, err
+			}
+			systemParts = append(systemParts, m.Content)
+
+		case "tool":
+			pendingResults = append(pendingResults, outBlock{
+				Type:      "tool_result",
+				ToolUseID: m.ToolCallID,
+				Content:   m.Content,
+			})
+
+		case "assistant":
+			if err := flushResults(); err != nil {
+				return messagesRequest{}, err
+			}
+			wm, err := buildAssistantMessage(m)
+			if err != nil {
+				return messagesRequest{}, err
+			}
+			msgs = append(msgs, wm)
+
+		default: // "user" and anything else
+			if err := flushResults(); err != nil {
+				return messagesRequest{}, err
+			}
+			body, err := json.Marshal(m.Content)
+			if err != nil {
+				return messagesRequest{}, err
+			}
+			msgs = append(msgs, wireMessage{Role: m.Role, Content: body})
+		}
+	}
+	if err := flushResults(); err != nil {
+		return messagesRequest{}, err
+	}
+
 	if c.Prompt != "" {
-		msgs = append(msgs, wireMessage{Role: "user", Content: c.Prompt})
+		body, err := json.Marshal(c.Prompt)
+		if err != nil {
+			return messagesRequest{}, err
+		}
+		msgs = append(msgs, wireMessage{Role: "user", Content: body})
 	}
+
 	if len(msgs) == 0 {
 		return messagesRequest{}, errors.New("anthropic: Call requires Prompt or at least one user/assistant Message")
 	}
+
+	tools, err := translateTools(c.Tools)
+	if err != nil {
+		return messagesRequest{}, err
+	}
+
 	return messagesRequest{
 		Model:     model,
 		Messages:  msgs,
 		MaxTokens: maxTokens,
 		System:    strings.Join(systemParts, "\n\n"),
+		Tools:     tools,
 	}, nil
+}
+
+// buildAssistantMessage serialises an assistant message. If it has
+// tool calls, the Content is a content-block array mixing text (when
+// non-empty) and tool_use blocks. Plain assistant messages serialise
+// as a bare string for symmetry with the common case.
+func buildAssistantMessage(m hippo.Message) (wireMessage, error) {
+	if len(m.ToolCalls) == 0 {
+		body, err := json.Marshal(m.Content)
+		if err != nil {
+			return wireMessage{}, err
+		}
+		return wireMessage{Role: "assistant", Content: body}, nil
+	}
+	blocks := make([]outBlock, 0, len(m.ToolCalls)+1)
+	if m.Content != "" {
+		blocks = append(blocks, outBlock{Type: "text", Text: m.Content})
+	}
+	for _, tc := range m.ToolCalls {
+		args := tc.Arguments
+		if len(args) == 0 {
+			args = json.RawMessage(`{}`)
+		}
+		blocks = append(blocks, outBlock{
+			Type:  "tool_use",
+			ID:    tc.ID,
+			Name:  tc.Name,
+			Input: args,
+		})
+	}
+	content, err := json.Marshal(blocks)
+	if err != nil {
+		return wireMessage{}, err
+	}
+	return wireMessage{Role: "assistant", Content: content}, nil
+}
+
+// translateTools maps hippo.Tool instances into Anthropic's
+// request-level tools array. A nil schema is replaced with an
+// empty object-type schema so the request isn't rejected; a real
+// schema passes through verbatim.
+func translateTools(tools []hippo.Tool) ([]wireTool, error) {
+	if len(tools) == 0 {
+		return nil, nil
+	}
+	out := make([]wireTool, 0, len(tools))
+	for _, t := range tools {
+		if t == nil {
+			continue
+		}
+		schema := t.Schema()
+		if len(schema) == 0 {
+			schema = json.RawMessage(`{"type":"object"}`)
+		}
+		out = append(out, wireTool{
+			Name:        t.Name(),
+			Description: t.Description(),
+			InputSchema: schema,
+		})
+	}
+	return out, nil
 }
 
 // retryBaseDelay is the base backoff delay between retry attempts.
