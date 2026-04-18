@@ -11,6 +11,8 @@ go 1.23.0
 // Unpin when the v0.2 cycle bumps our floor to 1.25.
 require modernc.org/sqlite v1.36.1
 
+require gopkg.in/yaml.v3 v3.0.1
+
 require (
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/google/uuid v1.6.0 // indirect
