@@ -279,7 +279,11 @@ type MemoryQuery struct {
 	// means no tag filter.
 	Tags []string
 	// Since restricts matches to records on or after this timestamp.
+	// Zero value means no lower bound.
 	Since time.Time
+	// Until restricts matches to records on or before this timestamp.
+	// Zero value means no upper bound.
+	Until time.Time
 	// Limit caps the number of records returned. Zero uses the backend
 	// default (typically 10).
 	Limit int
