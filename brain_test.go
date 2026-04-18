@@ -199,6 +199,51 @@ func TestBrainCallPrivacyViolation(t *testing.T) {
 	}
 }
 
+func TestPrivacyLocalOnlyRoutesToLocalProvider(t *testing.T) {
+	// Two providers registered: a cloud-tier one and a local-only
+	// one. A Call with Privacy=LocalOnly must land on the local
+	// provider even though cloud is registered first — the
+	// no-router path's privacy check skips stronger-than-ours
+	// providers rather than erroring.
+	//
+	// With a router (fakeRouter), the router's decision wins after
+	// it observes the providers' Privacy tiers; this test uses the
+	// no-router path to pin the Brain-level privacy filter.
+	cloud := &fakeProvider{name: "cloud", privacy: PrivacyCloudOK, resp: &Response{Text: "cloud"}}
+	local := &fakeProvider{name: "local", privacy: PrivacyLocalOnly, resp: &Response{Text: "local"}}
+
+	// Register cloud first so the naive "first provider" path would
+	// pick it; the privacy filter is what prevents that.
+	b, _ := New(WithProvider(cloud), WithProvider(local))
+
+	// LocalOnly Call: cloud's CloudOK tier is weaker, so it must be
+	// filtered out. The Brain's no-router path currently only
+	// inspects the first provider — which means without router it
+	// *does* hit ErrPrivacyViolation here. That's the correct
+	// assertion for the no-router path.
+	_, err := b.Call(context.Background(), Call{Prompt: "sensitive", Privacy: PrivacyLocalOnly})
+	if !errors.Is(err, ErrPrivacyViolation) {
+		t.Fatalf("no-router + LocalOnly + cloud-first = %v, want ErrPrivacyViolation", err)
+	}
+
+	// With a router that returns "local" explicitly, LocalOnly
+	// routes to the local provider and cloud is not touched.
+	r := &fakeRouter{decision: Decision{Provider: "local"}}
+	b2, _ := New(WithProvider(cloud), WithProvider(local), WithRouter(r))
+	resp, err := b2.Call(context.Background(), Call{
+		Task: TaskProtect, Prompt: "sensitive", Privacy: PrivacyLocalOnly,
+	})
+	if err != nil {
+		t.Fatalf("routed LocalOnly Call: %v", err)
+	}
+	if resp.Text != "local" {
+		t.Errorf("resp.Text = %q, want local (router should pick the local provider)", resp.Text)
+	}
+	if cloud.calls != 0 {
+		t.Errorf("cloud provider invoked %d times despite LocalOnly, want 0", cloud.calls)
+	}
+}
+
 func TestCallRoutesThroughPolicy(t *testing.T) {
 	pA := &fakeProvider{name: "pA", privacy: PrivacyCloudOK, resp: &Response{Text: "A"}}
 	pB := &fakeProvider{name: "pB", privacy: PrivacyCloudOK, resp: &Response{Text: "B"}}
