@@ -1,0 +1,40 @@
+# Embedded default routing policy for hippo.
+#
+# hippo ships with this policy so yaml.Load("") returns a working
+# Router without requiring users to drop a file on disk. The Brain
+# uses it when no WithRouter option is passed and memory is configured,
+# or when examples want a turn-key experience.
+#
+# Users with real needs should copy this file, edit it, and pass the
+# path to yaml.Load(path). Keep entries sorted by task name.
+
+tasks:
+  classify:
+    privacy: cloud_ok
+    prefer:
+      - anthropic:claude-haiku-4-5
+    max_cost_usd: 0.001
+
+  embed:
+    privacy: local_only
+    prefer: []
+    fallback: []
+
+  generate:
+    privacy: cloud_ok
+    prefer:
+      - anthropic:claude-sonnet-4-6
+      - anthropic:claude-haiku-4-5
+    max_cost_usd: 0.05
+
+  protect:
+    privacy: local_only
+    prefer: []
+    fallback: []
+
+  reason:
+    privacy: cloud_ok
+    prefer:
+      - anthropic:claude-opus-4-7
+      - anthropic:claude-sonnet-4-6
+    max_cost_usd: 0.10

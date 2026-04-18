@@ -13,11 +13,11 @@ import (
 	"github.com/mahdi-salmanzade/hippo/providers/anthropic"
 	"github.com/mahdi-salmanzade/hippo/providers/ollama"
 	"github.com/mahdi-salmanzade/hippo/providers/openai"
-	"github.com/mahdi-salmanzade/hippo/router"
+	yamlrouter "github.com/mahdi-salmanzade/hippo/router/yaml"
 )
 
 func main() {
-	r, err := router.NewYAML("policy.yaml")
+	r, err := yamlrouter.Load("policy.yaml")
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)

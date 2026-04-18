@@ -54,14 +54,19 @@ type Memory interface {
 // Router is the policy interface that chooses which Provider and model
 // should serve a given Call.
 //
-// Implementations live in hippo/router. Implementations must be safe for
-// concurrent use. Route must not perform network I/O.
+// Implementations live in hippo/router and must be safe for concurrent
+// use. Route must not perform network I/O — it is called on every
+// dispatch and must stay cheap.
+//
+// The providers slice is the Brain's registered provider list, passed
+// in on every Route call so the router itself stays stateless w.r.t.
+// the provider set. budget is the BudgetTracker's Remaining() at call
+// time; routers may use it to skip providers that would overrun.
 type Router interface {
 	// Name returns a short identifier for logging.
 	Name() string
-	// Route picks a Provider/Model for c given the remaining USD
-	// budget.
-	Route(ctx context.Context, c Call, budget float64) (Decision, error)
+	// Route picks a Provider/Model for c.
+	Route(ctx context.Context, c Call, providers []Provider, budget float64) (Decision, error)
 }
 
 // BudgetTracker caps LLM spend. Implementations live in hippo/budget
