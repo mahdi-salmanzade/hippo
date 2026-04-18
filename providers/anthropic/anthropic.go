@@ -279,6 +279,11 @@ func (p *provider) buildRequestBody(c hippo.Call, model string, maxTokens int) (
 	}, nil
 }
 
+// retryBaseDelay is the first sleep in the retry schedule. It is a
+// var (not const) so tests can compress it; production code should
+// treat it as a constant.
+var retryBaseDelay = time.Second
+
 // doWithRetry POSTs reqBody to /v1/messages, retrying on 429 and 5xx
 // with exponential backoff (1s, 2s) up to 3 attempts total. Network
 // errors are not retried — they return immediately, wrapping ctx errors
@@ -291,7 +296,7 @@ func (p *provider) doWithRetry(ctx context.Context, reqBody []byte) (int, []byte
 	)
 	for attempt := 0; attempt < maxAttempts; attempt++ {
 		if attempt > 0 {
-			backoff := time.Duration(1<<uint(attempt-1)) * time.Second
+			backoff := time.Duration(1<<uint(attempt-1)) * retryBaseDelay
 			select {
 			case <-ctx.Done():
 				return 0, nil, ctx.Err()
