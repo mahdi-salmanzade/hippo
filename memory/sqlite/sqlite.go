@@ -12,6 +12,10 @@ import (
 	"time"
 
 	"github.com/mahdi-salmanzade/hippo"
+
+	// Registers the pure-Go "sqlite" driver with database/sql.
+	// Imported for its side effect only.
+	_ "modernc.org/sqlite"
 )
 
 // store is the SQLite-backed hippo.Memory implementation. Unexported
