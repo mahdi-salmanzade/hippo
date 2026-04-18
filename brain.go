@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"math"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -47,7 +48,9 @@ type Brain struct {
 // provider, pass a Router explicitly.
 func New(opts ...Option) (*Brain, error) {
 	c := config{
-		logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+		logger:           slog.New(slog.NewTextHandler(io.Discard, nil)),
+		maxToolHops:      defaultMaxToolHops,
+		maxParallelTools: defaultMaxParallelTools,
 	}
 	for _, opt := range opts {
 		if err := opt(&c); err != nil {
@@ -59,22 +62,23 @@ func New(opts ...Option) (*Brain, error) {
 
 // Call dispatches c to a provider and returns the response.
 //
-// Pass 3 flow:
+// Flow:
 //
-//  1. Selection. Router picks provider+model + cost estimate.
-//  2. Budget gate. Estimated cost checked against Call.MaxCostUSD
-//     and BudgetTracker.Remaining(); exceeding either yields
-//     ErrBudgetExceeded.
-//  3. Memory hydration. When a Memory is wired and Call.UseMemory is
-//     non-zero, the Brain Recalls matching records and prepends them
-//     as a system-role message on the outgoing Call. Recall errors
-//     are logged but do not block the Call — memory is a helper,
-//     not a dependency.
-//  4. Dispatch. Provider serves the enriched Call.
-//  5. Charge. Post-call, BudgetTracker.Charge records real usage.
-//  6. Episode. When Memory is wired, a summary of the call is
-//     written back as an Episodic record. This happens in a
-//     background goroutine so it doesn't add latency.
+//  1. Route + budget-gate + memory-hydrate (same as before tools).
+//  2. Attach the registered ToolSet to the outgoing Call as
+//     c.Tools so the provider can advertise them to the model.
+//  3. Tool-execution loop: dispatch to the provider; if the
+//     response has no tool calls, return it. Otherwise, execute
+//     the tools in parallel (bounded by WithMaxParallelTools),
+//     append the assistant turn + tool-result messages, and go
+//     around again. Cap the loop at WithMaxToolHops (default 10).
+//  4. Aggregate usage + cost across all turns, charge the budget
+//     once, record one episode.
+//
+// When the hop cap is hit, Call returns with the final turn's
+// response and Response.Err = ErrMaxToolHopsExceeded — the response
+// is still usable; callers can inspect ToolCalls and continue
+// manually or prompt the model differently.
 func (b *Brain) Call(ctx context.Context, c Call) (*Response, error) {
 	if len(b.cfg.providers) == 0 {
 		return nil, ErrNoProviderAvailable
@@ -90,10 +94,6 @@ func (b *Brain) Call(ctx context.Context, c Call) (*Response, error) {
 		return nil, fmt.Errorf("hippo: router picked unregistered provider %q", decision.Provider)
 	}
 
-	// Budget gate — belt-and-suspenders against the router. The
-	// router already applied the same ceiling, but a Brain without a
-	// Router still gets enforcement here, and a hand-tuned
-	// Router.Route that skipped the budget check is caught.
 	if b.cfg.budget != nil {
 		remaining := b.cfg.budget.Remaining()
 		if decision.EstimatedCostUSD > remaining {
@@ -106,48 +106,237 @@ func (b *Brain) Call(ctx context.Context, c Call) (*Response, error) {
 			ErrBudgetExceeded, decision.EstimatedCostUSD, c.MaxCostUSD)
 	}
 
-	enriched := c
+	memoryHits := b.hydrateMemory(ctx, c)
+	enriched := injectMemory(c, memoryHits)
 	if decision.Model != "" {
 		enriched.Model = decision.Model
 	}
+	enriched.Tools = b.toolsForCall(c)
 
-	// Memory hydration. Recall runs with the call's ctx so a
-	// cancelled Call doesn't leave a hanging query.
-	memoryHits := b.hydrateMemory(ctx, c)
-	enriched = injectMemory(enriched, memoryHits)
+	// Initial message set: memory-injected system + user/assistant
+	// content + the Prompt appended as the last user turn. The
+	// provider's buildRequestBody would do the same flattening, but
+	// we need the messages as hippo.Message values so the loop can
+	// append assistant + tool-result turns between provider calls.
+	messages := messagesFromCall(enriched)
 
-	resp, err := p.Call(ctx, enriched)
-	if err != nil {
-		return nil, err
-	}
+	var totalUsage Usage
+	var totalCost float64
+	finalResp := &Response{}
+	hops := 0
 
-	// The Brain owns routing and memory metadata — backfill if the
-	// provider adapter didn't populate these fields itself.
-	if resp.Provider == "" {
-		resp.Provider = decision.Provider
-	}
-	if resp.Model == "" {
-		resp.Model = decision.Model
-	}
-	resp.MemoryHits = recordIDs(memoryHits)
+	for {
+		turnCall := enriched
+		turnCall.Messages = messages
+		turnCall.Prompt = ""
 
-	// Charge real usage. Unknown pricing is a warning, not a failure
-	// — hippo prefers serving under-priced calls to blocking on a
-	// pricing-table gap.
-	if b.cfg.budget != nil {
-		if err := b.cfg.budget.Charge(resp.Provider, resp.Model, resp.Usage); err != nil {
-			b.logger.Warn("hippo: budget charge failed", "err", err,
-				"provider", resp.Provider, "model", resp.Model)
+		resp, err := p.Call(ctx, turnCall)
+		if err != nil {
+			return nil, err
+		}
+
+		totalUsage = addUsage(totalUsage, resp.Usage)
+		totalCost += resp.CostUSD
+		finalResp = resp
+
+		if len(resp.ToolCalls) == 0 {
+			break
+		}
+
+		hops++
+		if hops > b.cfg.maxToolHops {
+			finalResp.Err = ErrMaxToolHopsExceeded
+			break
+		}
+
+		outcomes := b.executeToolsParallel(ctx, resp.ToolCalls)
+
+		messages = append(messages, Message{
+			Role:      "assistant",
+			Content:   resp.Text,
+			ToolCalls: resp.ToolCalls,
+		})
+		for _, o := range outcomes {
+			messages = append(messages, Message{
+				Role:       "tool",
+				ToolCallID: o.CallID,
+				Name:       o.ToolName,
+				Content:    o.Result.Content,
+			})
 		}
 	}
 
-	// Episode recording runs async with context.Background() so a
-	// cancelled call ctx doesn't abort the write.
-	if b.cfg.memory != nil {
-		go b.recordEpisode(c, resp)
+	finalResp.Usage = totalUsage
+	finalResp.CostUSD = totalCost
+	if finalResp.Provider == "" {
+		finalResp.Provider = decision.Provider
+	}
+	if finalResp.Model == "" {
+		finalResp.Model = decision.Model
+	}
+	finalResp.MemoryHits = recordIDs(memoryHits)
+
+	if b.cfg.budget != nil {
+		if err := b.cfg.budget.Charge(finalResp.Provider, finalResp.Model, totalUsage); err != nil {
+			b.logger.Warn("hippo: budget charge failed", "err", err,
+				"provider", finalResp.Provider, "model", finalResp.Model)
+		}
 	}
 
-	return resp, nil
+	if b.cfg.memory != nil {
+		go b.recordEpisode(c, finalResp)
+	}
+
+	return finalResp, nil
+}
+
+// toolsForCall returns the tool set that should be advertised to the
+// provider for this Call. Explicit Call.Tools wins over the Brain's
+// registered ToolSet; otherwise, the Brain's tools are used.
+//
+// The distinction matters: a caller who passes their own Tools on a
+// single Call expects those to be the full set (no implicit
+// augmentation with Brain-wide tools), whereas a caller who passes
+// nothing expects the Brain's registered tools.
+func (b *Brain) toolsForCall(c Call) []Tool {
+	if len(c.Tools) > 0 {
+		return c.Tools
+	}
+	if b.cfg.tools == nil {
+		return nil
+	}
+	return b.cfg.tools.All()
+}
+
+// messagesFromCall flattens the initial (Messages, Prompt) pair into
+// a single []Message. The tool loop operates on this slice, appending
+// further turns as it goes.
+func messagesFromCall(c Call) []Message {
+	msgs := make([]Message, 0, len(c.Messages)+1)
+	msgs = append(msgs, c.Messages...)
+	if c.Prompt != "" {
+		msgs = append(msgs, Message{Role: "user", Content: c.Prompt})
+	}
+	return msgs
+}
+
+// addUsage sums two Usage values. Used to aggregate counts across
+// tool-loop turns so Brain charges the budget once with the total
+// and exposes the total on the final Response.
+func addUsage(a, b Usage) Usage {
+	return Usage{
+		InputTokens:  a.InputTokens + b.InputTokens,
+		OutputTokens: a.OutputTokens + b.OutputTokens,
+		CachedTokens: a.CachedTokens + b.CachedTokens,
+	}
+}
+
+// toolOutcome is the result of one tool execution during the loop.
+// CallID and ToolName correlate the outcome back to the ToolCall
+// that produced it so the feedback message has the right id/name
+// fields (providers use these differently — Anthropic tool_use_id,
+// OpenAI call_id, Ollama tool_call_id).
+type toolOutcome struct {
+	CallID   string
+	ToolName string
+	Result   ToolResult
+}
+
+// executeToolsParallel runs a batch of ToolCalls concurrently,
+// bounded by WithMaxParallelTools, and returns the outcomes in the
+// SAME ORDER as the input calls (not completion order). Order
+// preservation is load-bearing: providers correlate tool results by
+// position on some models and by id on others, so consistent
+// positional order avoids a whole category of subtle bugs.
+//
+// Panics inside Tool.Execute are recovered and surfaced as an
+// IsError:true result containing the panic value. Non-nil errors
+// from Execute are likewise converted to IsError:true so the LLM
+// sees the failure and can correct course. Unknown tool names
+// become IsError results with "tool not found". Context
+// cancellation during execution produces IsError results with
+// "cancelled" — the loop itself checks ctx.Err afterwards.
+func (b *Brain) executeToolsParallel(ctx context.Context, calls []ToolCall) []toolOutcome {
+	outcomes := make([]toolOutcome, len(calls))
+	if len(calls) == 0 {
+		return outcomes
+	}
+
+	concurrency := b.cfg.maxParallelTools
+	if concurrency <= 0 {
+		concurrency = defaultMaxParallelTools
+	}
+	sem := make(chan struct{}, concurrency)
+	var wg sync.WaitGroup
+
+	for i := range calls {
+		i := i
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			select {
+			case sem <- struct{}{}:
+				defer func() { <-sem }()
+			case <-ctx.Done():
+				outcomes[i] = toolOutcome{
+					CallID:   calls[i].ID,
+					ToolName: calls[i].Name,
+					Result:   ToolResult{Content: "tool execution cancelled", IsError: true},
+				}
+				return
+			}
+			outcomes[i] = b.executeOneTool(ctx, calls[i])
+		}()
+	}
+	wg.Wait()
+	return outcomes
+}
+
+// executeOneTool looks up the tool in the registry and runs it with
+// panic recovery and error conversion. Never returns a raw error —
+// all failure modes collapse into ToolResult{IsError: true, Content: <msg>}
+// so the loop can feed them back to the model uniformly.
+func (b *Brain) executeOneTool(ctx context.Context, call ToolCall) (out toolOutcome) {
+	out.CallID = call.ID
+	out.ToolName = call.Name
+
+	defer func() {
+		if r := recover(); r != nil {
+			out.Result = ToolResult{
+				Content: fmt.Sprintf("tool %q panicked: %v", call.Name, r),
+				IsError: true,
+			}
+			b.logger.Warn("hippo: tool panicked",
+				"tool", call.Name, "panic", r)
+		}
+	}()
+
+	if b.cfg.tools == nil {
+		out.Result = ToolResult{
+			Content: fmt.Sprintf("%s: no tools registered on this Brain", ErrToolNotFound),
+			IsError: true,
+		}
+		return out
+	}
+	tool, ok := b.cfg.tools.Get(call.Name)
+	if !ok {
+		out.Result = ToolResult{
+			Content: fmt.Sprintf("%s: %q", ErrToolNotFound, call.Name),
+			IsError: true,
+		}
+		return out
+	}
+
+	result, err := tool.Execute(ctx, call.Arguments)
+	if err != nil {
+		out.Result = ToolResult{
+			Content: fmt.Sprintf("tool %q returned error: %v", call.Name, err),
+			IsError: true,
+		}
+		return out
+	}
+	out.Result = result
+	return out
 }
 
 // decide resolves the Call to a Decision. With a Router configured,
@@ -214,22 +403,25 @@ func providerByName(providers []Provider, name string) Provider {
 // Stream is the streaming counterpart to Call. It runs the same
 // routing, budget-gate, and memory-hydration synchronously before
 // opening the provider stream; on success it returns a receive-only
-// channel of StreamChunk values.
+// channel of StreamChunk values that spans the entire tool-execution
+// loop, not a single provider turn.
 //
 // Semantics:
 //   - Errors during route / budget / hydration return (nil, err); no
 //     channel is opened.
-//   - On success, the returned channel emits zero or more
-//     StreamChunkText / StreamChunkThinking / StreamChunkToolCall
-//     chunks, followed by exactly one StreamChunkUsage (on success) or
-//     StreamChunkError (on mid-stream failure). The channel always
-//     closes after the terminal chunk.
-//   - Budget.Charge happens just before the StreamChunkUsage chunk is
-//     forwarded, so a caller inspecting budget.Spent() immediately
-//     after receiving that chunk sees the updated total.
-//   - Episode recording is started after the StreamChunkUsage chunk
-//     is forwarded, in a background goroutine with context.Background()
-//     so the caller's ctx cancellation doesn't abort the write.
+//   - On success, the channel emits:
+//   - StreamChunkText / StreamChunkThinking / StreamChunkToolCall
+//     forwarded from each provider turn.
+//   - StreamChunkToolResult after hippo executes a tool
+//     (preserves ordering: for any ToolCallID, the ToolCall
+//     chunk arrives strictly before the ToolResult chunk).
+//   - Exactly one terminal StreamChunkUsage with usage+cost
+//     aggregated across every turn.
+//   - On mid-stream failure, one terminal StreamChunkError
+//     replaces the usage chunk.
+//   - Per-turn provider Usage chunks are NOT forwarded — they fold
+//     into the final aggregated total so the consumer sees the
+//     stream as one continuous conversation, not N concatenated turns.
 //   - Callers MUST fully drain the channel or cancel ctx to avoid
 //     leaking the provider-side reader goroutine.
 func (b *Brain) Stream(ctx context.Context, c Call) (<-chan StreamChunk, error) {
@@ -247,7 +439,6 @@ func (b *Brain) Stream(ctx context.Context, c Call) (<-chan StreamChunk, error) 
 		return nil, fmt.Errorf("hippo: router picked unregistered provider %q", decision.Provider)
 	}
 
-	// Same belt-and-suspenders budget gate as Call.
 	if b.cfg.budget != nil {
 		remaining := b.cfg.budget.Remaining()
 		if decision.EstimatedCostUSD > remaining {
@@ -260,116 +451,250 @@ func (b *Brain) Stream(ctx context.Context, c Call) (<-chan StreamChunk, error) 
 			ErrBudgetExceeded, decision.EstimatedCostUSD, c.MaxCostUSD)
 	}
 
-	enriched := c
+	memoryHits := b.hydrateMemory(ctx, c)
+
+	// Open the first provider stream synchronously so handshake
+	// failures (bad credentials, unreachable server) surface as the
+	// error return of Brain.Stream — with no channel for the caller
+	// to drain. Subsequent-turn handshake errors inside the tool
+	// loop become terminal StreamChunkError chunks instead.
+	enriched := injectMemory(c, memoryHits)
 	if decision.Model != "" {
 		enriched.Model = decision.Model
 	}
-	memoryHits := b.hydrateMemory(ctx, c)
-	enriched = injectMemory(enriched, memoryHits)
+	enriched.Tools = b.toolsForCall(c)
+	firstMessages := messagesFromCall(enriched)
+	firstCall := enriched
+	firstCall.Messages = firstMessages
+	firstCall.Prompt = ""
 
-	providerCh, err := p.Stream(ctx, enriched)
+	firstCh, err := p.Stream(ctx, firstCall)
 	if err != nil {
 		return nil, err
 	}
 
 	out := make(chan StreamChunk, 16)
-	go b.wrapStream(ctx, c, decision, memoryHits, providerCh, out)
+	go b.streamWithTools(ctx, c, decision, p, memoryHits, enriched, firstMessages, firstCh, out)
 	return out, nil
 }
 
-// wrapStream forwards chunks from the provider channel to the caller-
-// visible channel, intercepting the terminal usage chunk to charge
-// the budget and record the episode. The original Call (not the
-// memory-injected enriched Call) is passed through so the episode
-// stores the user-authored prompt, not the synthesized system message.
+// streamWithTools is the multi-turn streaming loop. It calls
+// provider.Stream once per turn, forwards non-terminal chunks,
+// accumulates the turn's tool calls and usage, then — if the model
+// wanted tools — executes them, emits StreamChunkToolResult chunks,
+// and loops. The caller-visible channel stays open across turns so
+// the stream reads as one continuous event sequence.
 //
-// Forwarding always respects ctx cancellation: a blocked send gives
-// up when ctx.Done fires. On ctx cancel we stop forwarding, let the
-// deferred close run, and trust the provider goroutine to shut itself
-// down (its ctx is the same).
-func (b *Brain) wrapStream(
+// The first turn's provider channel is handed in from Stream() so
+// first-turn handshake errors can surface to the caller as the
+// error return of Brain.Stream before the goroutine starts. Later
+// turns' handshake errors become terminal StreamChunkError chunks.
+func (b *Brain) streamWithTools(
 	ctx context.Context,
 	original Call,
 	decision Decision,
+	p Provider,
 	memoryHits []Record,
-	in <-chan StreamChunk,
+	enriched Call,
+	messages []Message,
+	firstCh <-chan StreamChunk,
 	out chan<- StreamChunk,
 ) {
 	defer close(out)
 
-	var accumulatedText, accumulatedThinking strings.Builder
-	var toolCalls []ToolCall
+	var totalUsage Usage
+	var totalCost float64
+	var fullText, fullThinking strings.Builder
+	var allToolCalls []ToolCall
+	hops := 0
 
-	for chunk := range in {
-		switch chunk.Type {
-		case StreamChunkText:
-			accumulatedText.WriteString(chunk.Delta)
-		case StreamChunkThinking:
-			accumulatedThinking.WriteString(chunk.Delta)
-		case StreamChunkToolCall:
-			if chunk.ToolCall != nil {
-				toolCalls = append(toolCalls, *chunk.ToolCall)
-			}
-		case StreamChunkUsage:
-			// Backfill Provider/Model from the routing decision if
-			// the provider didn't stamp them itself. Keeping the
-			// provider's value when present means the dated model id
-			// (e.g. "gpt-5-2026-02-15") flows through rather than the
-			// alias the caller asked for.
-			if chunk.Provider == "" {
-				chunk.Provider = decision.Provider
-			}
-			if chunk.Model == "" {
-				chunk.Model = decision.Model
-			}
-			// Charge before forwarding: a consumer inspecting
-			// b.budget.Spent() immediately after seeing the usage
-			// chunk expects it to be up to date. Charge is
-			// in-memory, so this adds no latency.
-			if b.cfg.budget != nil && chunk.Usage != nil {
-				if err := b.cfg.budget.Charge(chunk.Provider, chunk.Model, *chunk.Usage); err != nil {
-					b.logger.Warn("hippo: stream budget charge failed", "err", err,
-						"provider", chunk.Provider, "model", chunk.Model)
-				}
-			}
-		case StreamChunkError:
-			// No charge, no episode on error.
-		}
-
+	emit := func(chunk StreamChunk) bool {
 		select {
 		case out <- chunk:
+			return true
 		case <-ctx.Done():
+			return false
+		}
+	}
+
+	providerCh := firstCh
+	for {
+		if ctx.Err() != nil {
+			return
+		}
+		if providerCh == nil {
+			turnCall := enriched
+			turnCall.Messages = messages
+			turnCall.Prompt = ""
+			ch, err := p.Stream(ctx, turnCall)
+			if err != nil {
+				emit(StreamChunk{Type: StreamChunkError, Error: err})
+				return
+			}
+			providerCh = ch
+		}
+
+		var turnToolCalls []ToolCall
+		var turnUsage *Usage
+		var turnText strings.Builder
+		streamErrored := false
+
+	turnLoop:
+		for chunk := range providerCh {
+			if ctx.Err() != nil {
+				return
+			}
+			switch chunk.Type {
+			case StreamChunkText:
+				turnText.WriteString(chunk.Delta)
+				fullText.WriteString(chunk.Delta)
+				if !emit(chunk) {
+					return
+				}
+			case StreamChunkThinking:
+				fullThinking.WriteString(chunk.Delta)
+				if !emit(chunk) {
+					return
+				}
+			case StreamChunkToolCall:
+				if chunk.ToolCall != nil {
+					turnToolCalls = append(turnToolCalls, *chunk.ToolCall)
+					allToolCalls = append(allToolCalls, *chunk.ToolCall)
+				}
+				if !emit(chunk) {
+					return
+				}
+			case StreamChunkUsage:
+				// Buffer — one aggregated usage chunk lands at the
+				// very end, not per turn.
+				u := chunk.Usage
+				turnUsage = u
+			case StreamChunkError:
+				if !emit(chunk) {
+					return
+				}
+				streamErrored = true
+				break turnLoop
+			}
+		}
+
+		if streamErrored {
 			return
 		}
 
-		// Episode recording happens after the usage chunk is in the
-		// caller's hands — memory I/O should never delay the last
-		// observable stream event.
-		if chunk.Type == StreamChunkUsage && b.cfg.memory != nil {
-			resp := &Response{
-				Text:       accumulatedText.String(),
-				Thinking:   accumulatedThinking.String(),
-				ToolCalls:  toolCalls,
-				Usage:      zeroUsage(chunk.Usage),
-				CostUSD:    chunk.CostUSD,
-				Provider:   chunk.Provider,
-				Model:      chunk.Model,
-				MemoryHits: recordIDs(memoryHits),
-			}
-			go b.recordEpisode(original, resp)
+		if turnUsage != nil {
+			totalUsage = addUsage(totalUsage, *turnUsage)
 		}
+
+		if len(turnToolCalls) == 0 {
+			b.emitTerminalStreamUsage(ctx, original, decision, memoryHits, out,
+				totalUsage, &totalCost, fullText.String(), fullThinking.String(), allToolCalls,
+				nil)
+			return
+		}
+
+		hops++
+		if hops > b.cfg.maxToolHops {
+			b.emitTerminalStreamUsage(ctx, original, decision, memoryHits, out,
+				totalUsage, &totalCost, fullText.String(), fullThinking.String(), allToolCalls,
+				ErrMaxToolHopsExceeded)
+			return
+		}
+
+		outcomes := b.executeToolsParallel(ctx, turnToolCalls)
+
+		for i := range outcomes {
+			o := outcomes[i]
+			result := o.Result
+			if !emit(StreamChunk{
+				Type:       StreamChunkToolResult,
+				ToolCallID: o.CallID,
+				ToolResult: &result,
+			}) {
+				return
+			}
+		}
+
+		messages = append(messages, Message{
+			Role:      "assistant",
+			Content:   turnText.String(),
+			ToolCalls: turnToolCalls,
+		})
+		for _, o := range outcomes {
+			messages = append(messages, Message{
+				Role:       "tool",
+				ToolCallID: o.CallID,
+				Name:       o.ToolName,
+				Content:    o.Result.Content,
+			})
+		}
+
+		// Next iteration opens a fresh provider stream.
+		providerCh = nil
 	}
 }
 
-// zeroUsage dereferences a *Usage or returns the zero value. Used so
-// wrapStream can hand recordEpisode a value even when the terminal
-// chunk's Usage field is unexpectedly nil (the provider should always
-// populate it but we don't want a nil deref on a malformed stream).
-func zeroUsage(u *Usage) Usage {
-	if u == nil {
-		return Usage{}
+// emitTerminalStreamUsage wraps up a streaming Call: charges budget,
+// emits the aggregated StreamChunkUsage (and an error chunk if the
+// stream ended on a hop cap), and queues the episode record. finalErr
+// non-nil means hop cap hit — emit the usage first so the consumer
+// has the aggregated state, then emit the error, then return.
+func (b *Brain) emitTerminalStreamUsage(
+	ctx context.Context,
+	original Call,
+	decision Decision,
+	memoryHits []Record,
+	out chan<- StreamChunk,
+	totalUsage Usage,
+	totalCost *float64,
+	fullText, fullThinking string,
+	allToolCalls []ToolCall,
+	finalErr error,
+) {
+	cost := *totalCost
+	if b.cfg.budget != nil {
+		if est, err := b.cfg.budget.EstimateCost(decision.Provider, decision.Model, totalUsage); err == nil {
+			cost = est
+		}
+		if err := b.cfg.budget.Charge(decision.Provider, decision.Model, totalUsage); err != nil {
+			b.logger.Warn("hippo: stream budget charge failed", "err", err,
+				"provider", decision.Provider, "model", decision.Model)
+		}
 	}
-	return *u
+
+	usage := totalUsage
+	select {
+	case out <- StreamChunk{
+		Type:     StreamChunkUsage,
+		Usage:    &usage,
+		CostUSD:  cost,
+		Provider: decision.Provider,
+		Model:    decision.Model,
+	}:
+	case <-ctx.Done():
+		return
+	}
+
+	if b.cfg.memory != nil {
+		resp := &Response{
+			Text:       fullText,
+			Thinking:   fullThinking,
+			ToolCalls:  allToolCalls,
+			Usage:      totalUsage,
+			CostUSD:    cost,
+			Provider:   decision.Provider,
+			Model:      decision.Model,
+			MemoryHits: recordIDs(memoryHits),
+		}
+		go b.recordEpisode(original, resp)
+	}
+
+	if finalErr != nil {
+		select {
+		case out <- StreamChunk{Type: StreamChunkError, Error: finalErr}:
+		case <-ctx.Done():
+		}
+	}
 }
 
 // memoryQueryFromScope translates a user-intent MemoryScope (what a
