@@ -461,11 +461,31 @@ func buildFTSQuery(query string) string {
 	return strings.Join(parts, " ")
 }
 
-// Prune is a stub until Pass 2.5 lands.
+// Prune deletes working-memory records older than before. See
+// hippo.Memory.
+//
+// Only rows with kind='working' are removed. Episodic and Profile
+// records are the ground-truth layer and are never auto-deleted —
+// Prune is intentionally conservative. Applications that want to
+// age-out episodic or profile data should issue that DELETE
+// themselves.
+//
+// Tag rows and FTS5 index entries are cleaned up automatically via
+// the ON DELETE CASCADE on tags.memory_id and the memories_ad
+// trigger on the memories table.
 func (s *store) Prune(ctx context.Context, before time.Time) error {
-	_ = ctx
-	_ = before
-	return hippo.ErrNotImplemented
+	if before.IsZero() {
+		return errors.New("memory/sqlite: Prune: before is zero")
+	}
+	_, err := s.db.ExecContext(ctx,
+		`DELETE FROM memories WHERE kind = ? AND timestamp < ?`,
+		string(hippo.MemoryWorking),
+		before.UnixNano(),
+	)
+	if err != nil {
+		return fmt.Errorf("memory/sqlite: prune: %w", err)
+	}
+	return nil
 }
 
 // Close closes the underlying *sql.DB. Safe to call more than once.
