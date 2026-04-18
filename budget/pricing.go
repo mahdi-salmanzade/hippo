@@ -1,5 +1,10 @@
 package budget
 
+import _ "embed"
+
+//go:embed pricing.yaml
+var pricingYAML []byte
+
 // PricingTable maps (provider, model) pairs to USD-per-token rates.
 //
 // Rates are stored per million tokens to match how providers publish
@@ -28,8 +33,11 @@ type Rate struct {
 // returned *PricingTable is safe to read concurrently but must not be
 // mutated; construct a copy first.
 func DefaultPricing() *PricingTable {
-	// TODO: parse the embedded pricing.yaml (once) and return the
-	// singleton. Use sync.Once.
+	// TODO: parse pricingYAML (once, via sync.Once) into a PricingTable
+	// and return the singleton. Until then, the embedded bytes are
+	// held in pricingYAML so the go:embed linkage is exercised by the
+	// compiler and a build-time missing-file error would surface here.
+	_ = pricingYAML
 	return &PricingTable{Entries: map[string]Rate{}}
 }
 

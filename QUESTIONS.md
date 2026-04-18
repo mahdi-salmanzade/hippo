@@ -3,21 +3,6 @@
 Questions raised during the scaffolding pass. None block compilation; all
 want a decision before the implementation pass.
 
-## 3. `pricing.yaml` location for `go:embed`
-
-`go:embed` cannot reference files above the importing package's directory.
-The spec puts `pricing.yaml` at the repo root but embeds it from
-`budget/pricing.go`, which sits one level down. Options:
-
-- Move `pricing.yaml` to `budget/pricing.yaml` (changes the layout).
-- Keep it at the root and embed from a root-level file (e.g. a new
-  `embed.go`) that exports the bytes for `budget` to parse.
-- Duplicate it: keep `pricing.yaml` at root for easy editing, generate or
-  copy into `budget/` at build time.
-
-I left `pricing.yaml` at the root for now with no `go:embed` directive, so
-`budget.DefaultPricing()` returns an empty table. Please pick one.
-
 ## 4. `modernc.org/sqlite` not yet in `go.mod`
 
 The SQLite backend stub in `memory/sqlite/sqlite.go` does not import
