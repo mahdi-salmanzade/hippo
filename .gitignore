@@ -1,0 +1,42 @@
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binary, built with `go test -c`
+*.test
+
+# Output of the go coverage tool
+*.out
+coverage.*
+
+# Dependency directories
+vendor/
+
+# Go workspace file
+go.work
+go.work.sum
+
+# Build artifacts
+dist/
+build/
+bin/
+
+# hippo runtime artifacts
+hippo.db
+hippo.db-journal
+hippo.db-wal
+hippo.db-shm
+
+# Local config / secrets
+.env
+.env.*
+!.env.example
+
+# Editor / OS
+.vscode/
+.idea/
+*.swp
+.DS_Store

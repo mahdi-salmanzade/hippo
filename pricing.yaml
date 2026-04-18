@@ -1,0 +1,14 @@
+# hippo pricing table
+#
+# This file is embedded into the hippo binary at build time via go:embed
+# and parsed by budget.DefaultPricing().
+#
+# Rates are USD per 1,000,000 tokens.
+#
+# Entries are keyed "provider:model". Keep this sorted alphabetically by
+# key so diffs are reviewable.
+#
+# TODO: populate with current Anthropic, OpenAI, Gemini, Ollama (free),
+# and OpenRouter rates. Track cached-input discount where published.
+
+entries: {}

@@ -1,0 +1,48 @@
+# Example hippo routing policy.
+#
+# Pass to router.NewYAML("policy.yaml") and register with hippo.WithRouter.
+# The file is hot-reloaded: edits take effect on the next Call.
+#
+# Top-level key is "tasks"; each entry is one TaskKind.
+
+tasks:
+  classify:
+    privacy: cloud_ok
+    prefer:
+      - "openai:gpt-4o-mini"
+      - "anthropic:claude-haiku-4-5"
+    fallback:
+      - "ollama:llama3.2:3b"
+    max_cost_usd: 0.001
+
+  reason:
+    privacy: cloud_ok
+    prefer:
+      - "anthropic:claude-opus-4-7"
+      - "openai:gpt-4o"
+    fallback:
+      - "anthropic:claude-sonnet-4-6"
+    max_cost_usd: 0.10
+
+  generate:
+    privacy: cloud_ok
+    prefer:
+      - "anthropic:claude-sonnet-4-6"
+      - "openai:gpt-4o"
+    fallback:
+      - "ollama:llama3.1:8b"
+    max_cost_usd: 0.02
+
+  protect:
+    privacy: local_only
+    prefer:
+      - "ollama:llama3.1:8b"
+    fallback: []
+    max_cost_usd: 0
+
+  embed:
+    privacy: cloud_ok
+    prefer:
+      - "openai:text-embedding-3-small"
+    fallback: []
+    max_cost_usd: 0.0005
