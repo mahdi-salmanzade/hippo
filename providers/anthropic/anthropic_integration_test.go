@@ -12,11 +12,19 @@ import (
 
 // TestIntegrationCallHaiku makes a real call to Anthropic's cheapest
 // model (claude-haiku-4-5) to exercise the full request/response path
-// end-to-end. Skipped unless ANTHROPIC_API_KEY is set; no build tag —
-// env-var gating is enough for Pass 1.
+// end-to-end.
+//
+// Two gates, both required:
+//   - HIPPO_RUN_INTEGRATION=1 — explicit opt-in. Prevents accidental
+//     network calls during routine `go test ./...` runs.
+//   - ANTHROPIC_API_KEY — set via .env (auto-loaded below) or the
+//     process environment.
 //
 // Expected cost per run: < $0.001 (a few dozen tokens each direction).
 func TestIntegrationCallHaiku(t *testing.T) {
+	if os.Getenv("HIPPO_RUN_INTEGRATION") != "1" {
+		t.Skip("set HIPPO_RUN_INTEGRATION=1 to run (hits real API)")
+	}
 	_ = dotenv.Load() // best-effort, picks up repo-root .env for local dev
 	key := os.Getenv("ANTHROPIC_API_KEY")
 	if key == "" {

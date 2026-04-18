@@ -1,0 +1,39 @@
+name: Integration
+
+# Integration tests hit real LLM provider APIs, so they cost real money
+# (a fraction of a cent per run, but non-zero) and require API keys.
+# They run only on manual trigger or on a nightly schedule — never on
+# every push. The default CI workflow skips them because
+# HIPPO_RUN_INTEGRATION is unset there.
+
+on:
+  workflow_dispatch: {}
+  schedule:
+    - cron: "0 3 * * *" # 03:00 UTC daily
+
+jobs:
+  integration:
+    name: Integration (${{ matrix.provider }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        provider: ["anthropic"]
+    env:
+      CGO_ENABLED: "0"
+      HIPPO_RUN_INTEGRATION: "1"
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.23"
+          check-latest: true
+
+      - name: Download modules
+        run: go mod download
+
+      - name: Run integration tests
+        run: go test -run Integration -v ./providers/${{ matrix.provider }}/...
