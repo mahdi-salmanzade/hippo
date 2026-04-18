@@ -162,18 +162,6 @@ func TestBrainCallPrivacyViolation(t *testing.T) {
 	}
 }
 
-func TestBrainStreamReturnsNotImplemented(t *testing.T) {
-	fp := &fakeProvider{name: "fake", privacy: PrivacyCloudOK}
-	b, _ := New(WithProvider(fp))
-	ch, err := b.Stream(context.Background(), Call{Prompt: "hi"})
-	if ch != nil {
-		t.Error("Stream returned non-nil channel, want nil")
-	}
-	if !errors.Is(err, ErrNotImplemented) {
-		t.Errorf("err = %v, want ErrNotImplemented", err)
-	}
-}
-
 func TestCallRoutesThroughPolicy(t *testing.T) {
 	pA := &fakeProvider{name: "pA", privacy: PrivacyCloudOK, resp: &Response{Text: "A"}}
 	pB := &fakeProvider{name: "pB", privacy: PrivacyCloudOK, resp: &Response{Text: "B"}}

@@ -211,12 +211,165 @@ func providerByName(providers []Provider, name string) Provider {
 	return nil
 }
 
-// Stream is the streaming counterpart to Call. Streaming is not wired
-// yet; callers receive ErrNotImplemented.
+// Stream is the streaming counterpart to Call. It runs the same
+// routing, budget-gate, and memory-hydration synchronously before
+// opening the provider stream; on success it returns a receive-only
+// channel of StreamChunk values.
+//
+// Semantics:
+//   - Errors during route / budget / hydration return (nil, err); no
+//     channel is opened.
+//   - On success, the returned channel emits zero or more
+//     StreamChunkText / StreamChunkThinking / StreamChunkToolCall
+//     chunks, followed by exactly one StreamChunkUsage (on success) or
+//     StreamChunkError (on mid-stream failure). The channel always
+//     closes after the terminal chunk.
+//   - Budget.Charge happens just before the StreamChunkUsage chunk is
+//     forwarded, so a caller inspecting budget.Spent() immediately
+//     after receiving that chunk sees the updated total.
+//   - Episode recording is started after the StreamChunkUsage chunk
+//     is forwarded, in a background goroutine with context.Background()
+//     so the caller's ctx cancellation doesn't abort the write.
+//   - Callers MUST fully drain the channel or cancel ctx to avoid
+//     leaking the provider-side reader goroutine.
 func (b *Brain) Stream(ctx context.Context, c Call) (<-chan StreamChunk, error) {
-	_ = ctx
-	_ = c
-	return nil, ErrNotImplemented
+	if len(b.cfg.providers) == 0 {
+		return nil, ErrNoProviderAvailable
+	}
+
+	decision, err := b.decide(ctx, c)
+	if err != nil {
+		return nil, err
+	}
+
+	p := providerByName(b.cfg.providers, decision.Provider)
+	if p == nil {
+		return nil, fmt.Errorf("hippo: router picked unregistered provider %q", decision.Provider)
+	}
+
+	// Same belt-and-suspenders budget gate as Call.
+	if b.cfg.budget != nil {
+		remaining := b.cfg.budget.Remaining()
+		if decision.EstimatedCostUSD > remaining {
+			return nil, fmt.Errorf("%w: estimate $%.6f > remaining $%.6f",
+				ErrBudgetExceeded, decision.EstimatedCostUSD, remaining)
+		}
+	}
+	if c.MaxCostUSD > 0 && decision.EstimatedCostUSD > c.MaxCostUSD {
+		return nil, fmt.Errorf("%w: estimate $%.6f > Call.MaxCostUSD $%.6f",
+			ErrBudgetExceeded, decision.EstimatedCostUSD, c.MaxCostUSD)
+	}
+
+	enriched := c
+	if decision.Model != "" {
+		enriched.Model = decision.Model
+	}
+	memoryHits := b.hydrateMemory(ctx, c)
+	enriched = injectMemory(enriched, memoryHits)
+
+	providerCh, err := p.Stream(ctx, enriched)
+	if err != nil {
+		return nil, err
+	}
+
+	out := make(chan StreamChunk, 16)
+	go b.wrapStream(ctx, c, decision, memoryHits, providerCh, out)
+	return out, nil
+}
+
+// wrapStream forwards chunks from the provider channel to the caller-
+// visible channel, intercepting the terminal usage chunk to charge
+// the budget and record the episode. The original Call (not the
+// memory-injected enriched Call) is passed through so the episode
+// stores the user-authored prompt, not the synthesized system message.
+//
+// Forwarding always respects ctx cancellation: a blocked send gives
+// up when ctx.Done fires. On ctx cancel we stop forwarding, let the
+// deferred close run, and trust the provider goroutine to shut itself
+// down (its ctx is the same).
+func (b *Brain) wrapStream(
+	ctx context.Context,
+	original Call,
+	decision Decision,
+	memoryHits []Record,
+	in <-chan StreamChunk,
+	out chan<- StreamChunk,
+) {
+	defer close(out)
+
+	var accumulatedText, accumulatedThinking strings.Builder
+	var toolCalls []ToolCall
+
+	for chunk := range in {
+		switch chunk.Type {
+		case StreamChunkText:
+			accumulatedText.WriteString(chunk.Delta)
+		case StreamChunkThinking:
+			accumulatedThinking.WriteString(chunk.Delta)
+		case StreamChunkToolCall:
+			if chunk.ToolCall != nil {
+				toolCalls = append(toolCalls, *chunk.ToolCall)
+			}
+		case StreamChunkUsage:
+			// Backfill Provider/Model from the routing decision if
+			// the provider didn't stamp them itself. Keeping the
+			// provider's value when present means the dated model id
+			// (e.g. "gpt-5-2026-02-15") flows through rather than the
+			// alias the caller asked for.
+			if chunk.Provider == "" {
+				chunk.Provider = decision.Provider
+			}
+			if chunk.Model == "" {
+				chunk.Model = decision.Model
+			}
+			// Charge before forwarding: a consumer inspecting
+			// b.budget.Spent() immediately after seeing the usage
+			// chunk expects it to be up to date. Charge is
+			// in-memory, so this adds no latency.
+			if b.cfg.budget != nil && chunk.Usage != nil {
+				if err := b.cfg.budget.Charge(chunk.Provider, chunk.Model, *chunk.Usage); err != nil {
+					b.logger.Warn("hippo: stream budget charge failed", "err", err,
+						"provider", chunk.Provider, "model", chunk.Model)
+				}
+			}
+		case StreamChunkError:
+			// No charge, no episode on error.
+		}
+
+		select {
+		case out <- chunk:
+		case <-ctx.Done():
+			return
+		}
+
+		// Episode recording happens after the usage chunk is in the
+		// caller's hands — memory I/O should never delay the last
+		// observable stream event.
+		if chunk.Type == StreamChunkUsage && b.cfg.memory != nil {
+			resp := &Response{
+				Text:       accumulatedText.String(),
+				Thinking:   accumulatedThinking.String(),
+				ToolCalls:  toolCalls,
+				Usage:      zeroUsage(chunk.Usage),
+				CostUSD:    chunk.CostUSD,
+				Provider:   chunk.Provider,
+				Model:      chunk.Model,
+				MemoryHits: recordIDs(memoryHits),
+			}
+			go b.recordEpisode(original, resp)
+		}
+	}
+}
+
+// zeroUsage dereferences a *Usage or returns the zero value. Used so
+// wrapStream can hand recordEpisode a value even when the terminal
+// chunk's Usage field is unexpectedly nil (the provider should always
+// populate it but we don't want a nil deref on a malformed stream).
+func zeroUsage(u *Usage) Usage {
+	if u == nil {
+		return Usage{}
+	}
+	return *u
 }
 
 // memoryQueryFromScope translates a user-intent MemoryScope (what a
