@@ -347,17 +347,6 @@ func TestComputeCostMatchesBudgetRates(t *testing.T) {
 	}
 }
 
-func TestStreamReturnsNotImplemented(t *testing.T) {
-	pr, _ := New(WithAPIKey("k"))
-	ch, err := pr.Stream(context.Background(), hippo.Call{Prompt: "hi"})
-	if ch != nil {
-		t.Error("Stream returned non-nil channel, want nil")
-	}
-	if !errors.Is(err, hippo.ErrNotImplemented) {
-		t.Errorf("err = %v, want hippo.ErrNotImplemented", err)
-	}
-}
-
 // compile-time assertion: keep imports in use across all test
 // permutations.
 var _ = fmt.Sprint
