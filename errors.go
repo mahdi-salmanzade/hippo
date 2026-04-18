@@ -51,6 +51,13 @@ var (
 	// failures (HTTP 5xx) after the retry budget is exhausted.
 	ErrProviderUnavailable = errors.New("hippo: provider unavailable")
 
+	// ErrContentPolicy is returned when a provider refuses a Call on
+	// safety / content-policy grounds. Distinct from ErrAuthentication
+	// (credentials fine, content is the problem) and from
+	// ErrModelNotFound (model fine, content is the problem). Retrying
+	// is futile; the caller must change the prompt.
+	ErrContentPolicy = errors.New("hippo: content policy violation")
+
 	// ErrNoRoutableProvider is returned when the Router exhausts its
 	// preference and fallback lists without finding any provider that
 	// satisfies the Call's privacy, budget, and task constraints.
