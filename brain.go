@@ -25,6 +25,26 @@ type Brain struct {
 //
 // New never blocks on network I/O; provider authentication is deferred
 // until the first Call.
+//
+// No-router default. If WithRouter is not supplied, Brain uses the
+// first registered provider for every Call (after the privacy check).
+// Multiple providers without a router logs a warning but still picks
+// the first. This is the "simplest working setup" tier:
+//
+//	// simplest: one provider, no router
+//	b, _ := hippo.New(hippo.WithProvider(p))
+//
+//	// with routing: policy picks provider+model per Call.Task
+//	b, _ := hippo.New(
+//	    hippo.WithProvider(anthropic.New(...)),
+//	    hippo.WithProvider(openai.New(...)),
+//	    hippo.WithRouter(yaml.Load("")), // embedded default policy
+//	)
+//
+// The no-router path exists so new users can start with a single
+// WithProvider and get a working Brain immediately; it is not a
+// shortcut for the full router flow. For anything beyond a single
+// provider, pass a Router explicitly.
 func New(opts ...Option) (*Brain, error) {
 	c := config{
 		logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
