@@ -62,7 +62,7 @@ const (
 	MemoryScopeRecent
 	// MemoryScopeFull attaches all scopes subject to token budget.
 	MemoryScopeFull
-	// MemoryScopeByTags attaches records matching Scope.Tags.
+	// MemoryScopeByTags attaches records matching MemoryScope.Tags.
 	MemoryScopeByTags
 )
 
@@ -262,11 +262,17 @@ type Record struct {
 	Source string
 }
 
-// Scope narrows a Recall query.
+// MemoryQuery is the retrieval-parameter shape for Memory.Recall.
 //
-// The zero value selects the most-recent records across all kinds, up to
-// a backend-chosen default limit.
-type Scope struct {
+// It is intentionally distinct from MemoryScope: MemoryScope is user
+// intent declared on a Call ("attach recent memory"), MemoryQuery is
+// the concrete filter passed to a backend ("records of these kinds,
+// matching these tags, since this time, at most N, of at least this
+// importance").
+//
+// The zero value selects the most-recent records across all kinds, up
+// to a backend-chosen default limit.
+type MemoryQuery struct {
 	// Kinds restricts matches to these MemoryKinds. Empty means any.
 	Kinds []MemoryKind
 	// Tags requires a record to have at least one of these tags. Empty

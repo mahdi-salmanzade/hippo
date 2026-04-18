@@ -39,11 +39,11 @@ type Memory interface {
 	// new one and mutates rec in place (backends may use any scheme,
 	// but ULID is recommended).
 	Add(ctx context.Context, rec *Record) error
-	// Recall returns records matching scope, ranked by a backend-
-	// defined relevance heuristic against query. If the backend
-	// supports embeddings, it SHOULD use them; otherwise lexical
-	// ranking is acceptable.
-	Recall(ctx context.Context, query string, scope Scope) ([]Record, error)
+	// Recall returns records matching q, ranked by a backend-defined
+	// relevance heuristic against query. If the backend supports
+	// embeddings, it SHOULD use them; otherwise lexical ranking is
+	// acceptable.
+	Recall(ctx context.Context, query string, q MemoryQuery) ([]Record, error)
 	// Prune deletes records older than before. Profile records are
 	// exempt unless the backend is configured otherwise.
 	Prune(ctx context.Context, before time.Time) error

@@ -42,11 +42,11 @@ func (s *store) Add(ctx context.Context, rec *hippo.Record) error {
 }
 
 // Recall queries the store. See hippo.Memory.
-func (s *store) Recall(ctx context.Context, query string, scope hippo.Scope) ([]hippo.Record, error) {
+func (s *store) Recall(ctx context.Context, query string, q hippo.MemoryQuery) ([]hippo.Record, error) {
 	_ = ctx
 	_ = query
-	_ = scope
-	// TODO: FTS5 MATCH + scope filters, optionally rerank via embeddings.
+	_ = q
+	// TODO: FTS5 MATCH + query filters, optionally rerank via embeddings.
 	panic("memory/sqlite: Recall not implemented")
 }
 

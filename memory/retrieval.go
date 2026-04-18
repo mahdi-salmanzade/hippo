@@ -1,7 +1,7 @@
 // Package memory holds utilities shared by memory backends that
 // implement the hippo.Memory interface. The interface itself, along with
-// the Record, MemoryKind, and Scope types, lives in the root hippo
-// package.
+// the Record, MemoryKind, and MemoryQuery types, lives in the root
+// hippo package.
 //
 // Backends live in subdirectories (memory/sqlite, etc.) and import
 // github.com/mahdi-salmanzade/hippo for the interface and types.
