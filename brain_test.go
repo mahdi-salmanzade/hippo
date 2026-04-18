@@ -3,6 +3,7 @@ package hippo
 import (
 	"context"
 	"errors"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -23,6 +24,10 @@ type fakeProvider struct {
 	seenCall Call
 	calls    int
 	mu       sync.Mutex
+
+	streamResp []StreamChunk
+	streamErr  error
+	streamGate <-chan struct{}
 }
 
 func (f *fakeProvider) Name() string                               { return f.name }
@@ -40,8 +45,40 @@ func (f *fakeProvider) Call(ctx context.Context, c Call) (*Response, error) {
 	}
 	return resp, err
 }
+// streamResp, if set, is the canned sequence of chunks the fake
+// provider emits on Stream. streamErr, if set, causes Stream to
+// return that error with no channel. streamGate blocks the first
+// chunk until closed, letting tests orchestrate mid-stream cancel.
 func (f *fakeProvider) Stream(ctx context.Context, c Call) (<-chan StreamChunk, error) {
-	return nil, ErrNotImplemented
+	f.mu.Lock()
+	f.seenCall = c
+	f.calls++
+	chunks := f.streamResp
+	err := f.streamErr
+	gate := f.streamGate
+	f.mu.Unlock()
+	if err != nil {
+		return nil, err
+	}
+	ch := make(chan StreamChunk, len(chunks))
+	go func() {
+		defer close(ch)
+		if gate != nil {
+			select {
+			case <-gate:
+			case <-ctx.Done():
+				return
+			}
+		}
+		for _, c := range chunks {
+			select {
+			case ch <- c:
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+	return ch, nil
 }
 
 // fakeMemory is a tiny in-slice Memory. Enough for brain tests;
@@ -382,4 +419,295 @@ func containsStr(haystack []string, needle string) bool {
 		}
 	}
 	return false
+}
+
+// --- stream tests ---------------------------------------------------
+
+// drainStream reads every chunk until the channel closes. A 2s
+// deadline bounds flaky leaks.
+func drainStream(t *testing.T, ch <-chan StreamChunk) []StreamChunk {
+	t.Helper()
+	var out []StreamChunk
+	deadline := time.After(2 * time.Second)
+	for {
+		select {
+		case c, ok := <-ch:
+			if !ok {
+				return out
+			}
+			out = append(out, c)
+		case <-deadline:
+			t.Fatalf("drainStream timed out after %d chunks", len(out))
+			return out
+		}
+	}
+}
+
+func TestStreamRoutesSameAsCall(t *testing.T) {
+	// Router picks pB; verify only pB's Stream is invoked.
+	pA := &fakeProvider{name: "pA", privacy: PrivacyCloudOK}
+	pB := &fakeProvider{name: "pB", privacy: PrivacyCloudOK,
+		streamResp: []StreamChunk{
+			{Type: StreamChunkText, Delta: "hi"},
+			{Type: StreamChunkUsage, Usage: &Usage{InputTokens: 1, OutputTokens: 1}},
+		},
+	}
+	r := &fakeRouter{decision: Decision{Provider: "pB", Model: "mB", EstimatedCostUSD: 0.01}}
+	b, _ := New(WithProvider(pA), WithProvider(pB), WithRouter(r))
+
+	ch, err := b.Stream(context.Background(), Call{Task: TaskGenerate, Prompt: "hi"})
+	if err != nil {
+		t.Fatalf("Stream: %v", err)
+	}
+	drainStream(t, ch)
+	if pA.calls != 0 {
+		t.Errorf("pA.Stream calls = %d, want 0", pA.calls)
+	}
+	if pB.calls != 1 {
+		t.Errorf("pB.Stream calls = %d, want 1", pB.calls)
+	}
+	if pB.seenCall.Model != "mB" {
+		t.Errorf("pB saw Model=%q, want mB", pB.seenCall.Model)
+	}
+}
+
+func TestStreamBudgetGateBeforeOpen(t *testing.T) {
+	fp := &fakeProvider{name: "fake", privacy: PrivacyCloudOK}
+	r := &fakeRouter{decision: Decision{Provider: "fake", Model: "m", EstimatedCostUSD: 1.00}}
+	bg := &fakeBudget{remaining: 0.50}
+
+	b, _ := New(WithProvider(fp), WithRouter(r), WithBudget(bg))
+	ch, err := b.Stream(context.Background(), Call{Task: TaskGenerate})
+	if !errors.Is(err, ErrBudgetExceeded) {
+		t.Errorf("err = %v, want ErrBudgetExceeded", err)
+	}
+	if ch != nil {
+		t.Error("channel returned despite budget denial")
+	}
+	if fp.calls != 0 {
+		t.Errorf("provider Stream invoked %d times despite budget denial, want 0", fp.calls)
+	}
+}
+
+func TestStreamHydratesMemory(t *testing.T) {
+	fp := &fakeProvider{name: "fake", privacy: PrivacyCloudOK,
+		streamResp: []StreamChunk{
+			{Type: StreamChunkUsage, Usage: &Usage{InputTokens: 1, OutputTokens: 1}},
+		},
+	}
+	mem := &fakeMemory{recallHits: []Record{
+		{ID: "r1", Content: "User prefers TypeScript", Timestamp: time.Now()},
+	}}
+	b, _ := New(WithProvider(fp), WithMemory(mem))
+
+	ch, err := b.Stream(context.Background(), Call{
+		Prompt:    "what next?",
+		UseMemory: MemoryScope{Mode: MemoryScopeRecent},
+	})
+	if err != nil {
+		t.Fatalf("Stream: %v", err)
+	}
+	drainStream(t, ch)
+
+	if len(fp.seenCall.Messages) == 0 {
+		t.Fatal("provider did not receive memory-injected system message")
+	}
+	sys := fp.seenCall.Messages[0]
+	if sys.Role != "system" {
+		t.Errorf("first Message.Role = %q, want system", sys.Role)
+	}
+	if !strings.Contains(sys.Content, "User prefers TypeScript") {
+		t.Errorf("injected system message missing memory content: %q", sys.Content)
+	}
+}
+
+func TestStreamChargesBudgetOnFinalUsage(t *testing.T) {
+	fp := &fakeProvider{name: "fake", privacy: PrivacyCloudOK,
+		streamResp: []StreamChunk{
+			{Type: StreamChunkText, Delta: "hello"},
+			{Type: StreamChunkUsage, Usage: &Usage{InputTokens: 10, OutputTokens: 5}},
+		},
+	}
+	r := &fakeRouter{decision: Decision{Provider: "fake", Model: "m"}}
+	bg := &fakeBudget{remaining: 100.00}
+	b, _ := New(WithProvider(fp), WithRouter(r), WithBudget(bg))
+
+	ch, err := b.Stream(context.Background(), Call{Task: TaskGenerate})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Read chunk-by-chunk to observe the ordering: budget is charged
+	// BEFORE the caller receives the usage chunk.
+	var sawUsage bool
+	var spentAtUsage float64
+	for chunk := range ch {
+		if chunk.Type == StreamChunkUsage {
+			sawUsage = true
+			spentAtUsage = bg.Spent()
+		}
+	}
+	if !sawUsage {
+		t.Fatal("no usage chunk observed")
+	}
+	if spentAtUsage == 0 {
+		t.Errorf("budget.Spent() at usage-chunk time = 0; want > 0 (charge must precede the send)")
+	}
+	if len(bg.charges) != 1 {
+		t.Errorf("charges = %d, want 1", len(bg.charges))
+	}
+}
+
+func TestStreamRecordsEpisodeOnSuccess(t *testing.T) {
+	fp := &fakeProvider{name: "fake", privacy: PrivacyCloudOK,
+		streamResp: []StreamChunk{
+			{Type: StreamChunkText, Delta: "hello "},
+			{Type: StreamChunkText, Delta: "back"},
+			{Type: StreamChunkUsage, Usage: &Usage{InputTokens: 1, OutputTokens: 2},
+				Provider: "fake", Model: "m"},
+		},
+	}
+	mem := &fakeMemory{}
+	b, _ := New(WithProvider(fp), WithMemory(mem))
+
+	ch, err := b.Stream(context.Background(), Call{Task: TaskGenerate, Prompt: "hello"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	drainStream(t, ch)
+
+	// Episode is recorded in a goroutine; poll briefly.
+	deadline := time.Now().Add(500 * time.Millisecond)
+	for time.Now().Before(deadline) {
+		mem.mu.Lock()
+		n := len(mem.added)
+		mem.mu.Unlock()
+		if n >= 1 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	mem.mu.Lock()
+	defer mem.mu.Unlock()
+	if len(mem.added) != 1 {
+		t.Fatalf("episodes recorded = %d, want 1", len(mem.added))
+	}
+	rec := mem.added[0]
+	if rec.Kind != MemoryEpisodic {
+		t.Errorf("Kind = %q, want MemoryEpisodic", rec.Kind)
+	}
+	if !strings.Contains(rec.Content, "hello") {
+		t.Errorf("episode missing prompt: %q", rec.Content)
+	}
+	if !strings.Contains(rec.Content, "hello back") {
+		t.Errorf("episode missing accumulated response text: %q", rec.Content)
+	}
+}
+
+func TestStreamDoesNotRecordEpisodeOnError(t *testing.T) {
+	fp := &fakeProvider{name: "fake", privacy: PrivacyCloudOK,
+		streamResp: []StreamChunk{
+			{Type: StreamChunkText, Delta: "partial"},
+			{Type: StreamChunkError, Error: errors.New("boom")},
+		},
+	}
+	mem := &fakeMemory{}
+	b, _ := New(WithProvider(fp), WithMemory(mem))
+
+	ch, err := b.Stream(context.Background(), Call{Prompt: "hi"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	drainStream(t, ch)
+
+	time.Sleep(50 * time.Millisecond)
+	mem.mu.Lock()
+	defer mem.mu.Unlock()
+	if len(mem.added) != 0 {
+		t.Errorf("episode recorded despite error chunk: %+v", mem.added)
+	}
+}
+
+func TestStreamPropagatesProviderError(t *testing.T) {
+	fp := &fakeProvider{name: "fake", privacy: PrivacyCloudOK,
+		streamErr: errors.New("handshake boom"),
+	}
+	b, _ := New(WithProvider(fp))
+
+	ch, err := b.Stream(context.Background(), Call{Prompt: "hi"})
+	if ch != nil {
+		t.Error("Stream returned channel alongside handshake error")
+	}
+	if err == nil || err.Error() != "handshake boom" {
+		t.Errorf("err = %v, want handshake boom", err)
+	}
+}
+
+func TestStreamContextCancelClosesChannel(t *testing.T) {
+	// Verify ctx cancel both closes the channel AND does not leak
+	// goroutines. baseline is taken AFTER Brain setup but BEFORE
+	// opening the stream so steady-state growth is measurable.
+	gate := make(chan struct{})
+	fp := &fakeProvider{name: "fake", privacy: PrivacyCloudOK,
+		streamResp: []StreamChunk{
+			{Type: StreamChunkText, Delta: "partial"},
+			{Type: StreamChunkUsage, Usage: &Usage{InputTokens: 1, OutputTokens: 1}},
+		},
+		streamGate: gate,
+	}
+	b, _ := New(WithProvider(fp))
+
+	baseline := runtime.NumGoroutine()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	ch, err := b.Stream(ctx, Call{Prompt: "hi"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Cancel without releasing the gate so the fake provider never
+	// sends a chunk — the only way the channel closes is via ctx
+	// cancellation.
+	cancel()
+
+	// Channel must close within a short window.
+	closeDeadline := time.After(2 * time.Second)
+	for open := true; open; {
+		select {
+		case _, ok := <-ch:
+			if !ok {
+				open = false
+			}
+		case <-closeDeadline:
+			t.Fatal("channel did not close after ctx cancel")
+		}
+	}
+
+	// Release the gate so the provider goroutine can exit (it's
+	// blocked on gate receive otherwise).
+	close(gate)
+
+	// Goroutines should drain back to baseline within 2s. Small +1/-1
+	// wiggle room is fine — the test asserts "not leaking", not exact
+	// equality.
+	const leakSlack = 2
+	leakDeadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(leakDeadline) {
+		if runtime.NumGoroutine()-baseline <= leakSlack {
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Errorf("goroutine leak: baseline=%d current=%d (slack=%d)",
+		baseline, runtime.NumGoroutine(), leakSlack)
+}
+
+func TestStreamNoProvider(t *testing.T) {
+	b, _ := New()
+	ch, err := b.Stream(context.Background(), Call{Prompt: "hi"})
+	if ch != nil {
+		t.Error("Stream returned channel with no providers")
+	}
+	if !errors.Is(err, ErrNoProviderAvailable) {
+		t.Errorf("err = %v, want ErrNoProviderAvailable", err)
+	}
 }
