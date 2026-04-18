@@ -1,5 +1,5 @@
-// Command basic is a minimal hippo example: construct a Brain with a
-// single provider and issue one Call.
+// Command basic is the minimal end-to-end hippo example: construct a
+// Brain with a single provider and issue one Call.
 //
 // Run with:
 //
@@ -9,6 +9,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"log"
 	"os"
 
 	"github.com/mahdi-salmanzade/hippo"
@@ -16,26 +17,30 @@ import (
 )
 
 func main() {
-	p, err := anthropic.New(anthropic.WithAPIKey(os.Getenv("ANTHROPIC_API_KEY")))
+	p, err := anthropic.New(
+		anthropic.WithAPIKey(os.Getenv("ANTHROPIC_API_KEY")),
+		anthropic.WithModel("claude-opus-4-7"),
+	)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
+		log.Fatal(err)
 	}
 
-	b, err := hippo.New(hippo.WithProvider(p))
+	brain, err := hippo.New(hippo.WithProvider(p))
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
+		log.Fatal(err)
 	}
-	defer b.Close()
+	defer brain.Close()
 
-	resp, err := b.Call(context.Background(), hippo.Call{
-		Task:   hippo.TaskGenerate,
-		Prompt: "Say hello in one sentence.",
+	resp, err := brain.Call(context.Background(), hippo.Call{
+		Prompt:    "Say hi in 5 words.",
+		MaxTokens: 50,
 	})
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
+		log.Fatal(err)
 	}
+
 	fmt.Println(resp.Text)
+	fmt.Printf("usage: %+v\n", resp.Usage)
+	fmt.Printf("cost:  $%.6f\n", resp.CostUSD)
+	fmt.Printf("latency: %dms\n", resp.LatencyMS)
 }
