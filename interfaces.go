@@ -64,18 +64,26 @@ type Router interface {
 	Route(ctx context.Context, c Call, budget float64) (Decision, error)
 }
 
-// BudgetTracker caps LLM spend.
+// BudgetTracker caps LLM spend. Implementations live in hippo/budget
+// and must be safe for concurrent use; Brain calls Charge and
+// Remaining from multiple goroutines.
 //
-// Implementations live in hippo/budget. Implementations must be safe for
-// concurrent use; Brain will call EstimateCost and Charge from multiple
-// goroutines.
+// The unit of accounting is (provider, model, Usage): the tracker
+// owns the pricing table that turns a token count into a USD figure.
+// That keeps provider code from duplicating price math (eventually —
+// see the Pass 5 consolidation note in providers/anthropic/pricing.go).
 type BudgetTracker interface {
-	// EstimateCost returns the expected USD cost of c using the
-	// Tracker's pricing table. It does not reserve budget.
-	EstimateCost(c Call) (float64, error)
-	// Charge records actual USD spent after a Call completes. It must
-	// be idempotent if called with the same (callID, amount) pair.
-	Charge(ctx context.Context, callID string, amountUSD float64) error
-	// Remaining returns the USD budget still available.
+	// EstimateCost returns the USD cost of the given Usage against
+	// the tracker's pricing table. A nil error with cost=0 is a
+	// valid "price unknown" answer; callers should not treat an
+	// unknown model as a hard failure.
+	EstimateCost(provider, model string, usage Usage) (float64, error)
+	// Charge records a real cost after a Call completes. Unlike
+	// EstimateCost it mutates the running total.
+	Charge(provider, model string, usage Usage) error
+	// Remaining returns the USD budget still available. Trackers
+	// without a ceiling return math.Inf(1).
 	Remaining() float64
+	// Spent returns the cumulative USD charged so far.
+	Spent() float64
 }

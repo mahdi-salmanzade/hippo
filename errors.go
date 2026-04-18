@@ -50,4 +50,20 @@ var (
 	// ErrProviderUnavailable is returned for transient provider-side
 	// failures (HTTP 5xx) after the retry budget is exhausted.
 	ErrProviderUnavailable = errors.New("hippo: provider unavailable")
+
+	// ErrNoRoutableProvider is returned when the Router exhausts its
+	// preference and fallback lists without finding any provider that
+	// satisfies the Call's privacy, budget, and task constraints.
+	// Distinct from ErrNoProviderAvailable, which means no providers
+	// were registered at all.
+	ErrNoRoutableProvider = errors.New("hippo: no routable provider")
+
+	// ErrUnknownTask is returned when a Router has no policy entry
+	// for the Call's Task.
+	ErrUnknownTask = errors.New("hippo: unknown task")
+
+	// ErrUnknownPricing is returned (or wrapped) when a pricing table
+	// has no entry for a (provider, model) pair. Budget trackers
+	// treat this as best-effort zero cost rather than a fatal error.
+	ErrUnknownPricing = errors.New("hippo: unknown pricing")
 )

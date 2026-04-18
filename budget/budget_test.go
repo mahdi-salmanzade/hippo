@@ -1,0 +1,161 @@
+package budget
+
+import (
+	"errors"
+	"math"
+	"sync"
+	"testing"
+
+	"github.com/mahdi-salmanzade/hippo"
+)
+
+func TestRemainingWithNoCeiling(t *testing.T) {
+	b := New()
+	if got := b.Remaining(); got != math.Inf(1) {
+		t.Errorf("Remaining() = %v, want +Inf", got)
+	}
+}
+
+func TestRemainingWithCeiling(t *testing.T) {
+	b := New(WithCeiling(5.00))
+	if got := b.Remaining(); got != 5.00 {
+		t.Errorf("Remaining() = %v, want 5.00", got)
+	}
+}
+
+func TestChargeReducesRemaining(t *testing.T) {
+	b := New(WithCeiling(1.00))
+	// Haiku: 1000 input tokens = $0.001; 200 output = $0.001. Total = $0.002.
+	usage := hippo.Usage{InputTokens: 1000, OutputTokens: 200}
+	if err := b.Charge("anthropic", "claude-haiku-4-5", usage); err != nil {
+		t.Fatalf("Charge: %v", err)
+	}
+	want := 1.00 - 0.002
+	if got := b.Remaining(); math.Abs(got-want) > 1e-9 {
+		t.Errorf("Remaining() = %v, want %v", got, want)
+	}
+}
+
+func TestChargeAccumulatesAcrossCalls(t *testing.T) {
+	b := New()
+	usage := hippo.Usage{InputTokens: 1000, OutputTokens: 1000}
+	for i := 0; i < 5; i++ {
+		if err := b.Charge("anthropic", "claude-haiku-4-5", usage); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// 5 × (1000·$1/M + 1000·$5/M) = 5 × 0.006 = 0.030
+	want := 0.030
+	if got := b.Spent(); math.Abs(got-want) > 1e-9 {
+		t.Errorf("Spent() = %v, want %v", got, want)
+	}
+}
+
+func TestEstimateCostMatchesChargeForSameUsage(t *testing.T) {
+	b := New()
+	usage := hippo.Usage{InputTokens: 12, OutputTokens: 34, CachedTokens: 5}
+	est, err := b.EstimateCost("anthropic", "claude-haiku-4-5", usage)
+	if err != nil {
+		t.Fatalf("EstimateCost: %v", err)
+	}
+	if err := b.Charge("anthropic", "claude-haiku-4-5", usage); err != nil {
+		t.Fatal(err)
+	}
+	if got := b.Spent(); math.Abs(got-est) > 1e-12 {
+		t.Errorf("Spent() = %v, want EstimateCost = %v", got, est)
+	}
+}
+
+func TestEstimateCostUnknownModelReturnsZero(t *testing.T) {
+	b := New()
+	cost, err := b.EstimateCost("anthropic", "made-up-model", hippo.Usage{InputTokens: 100})
+	if cost != 0 {
+		t.Errorf("cost = %v, want 0 for unknown model", cost)
+	}
+	if !errors.Is(err, hippo.ErrUnknownPricing) {
+		t.Errorf("err = %v, want wrapping ErrUnknownPricing", err)
+	}
+}
+
+func TestChargeUnknownModelDoesNotBlock(t *testing.T) {
+	// Per the Pass 3 design: an unknown model pricing is a warning,
+	// not a fatal error. Charge should surface the error but still
+	// update Spent (by 0, since cost is 0).
+	b := New()
+	startingSpent := b.Spent()
+	err := b.Charge("anthropic", "made-up-model", hippo.Usage{InputTokens: 100})
+	if !errors.Is(err, hippo.ErrUnknownPricing) {
+		t.Errorf("Charge err = %v, want wrapping ErrUnknownPricing", err)
+	}
+	if got := b.Spent(); got != startingSpent {
+		t.Errorf("Spent() = %v, want unchanged (%v) for unknown model",
+			got, startingSpent)
+	}
+}
+
+func TestRemainingClampsAtZero(t *testing.T) {
+	b := New(WithCeiling(0.001))
+	// Charge far more than the ceiling.
+	usage := hippo.Usage{InputTokens: 1_000_000, OutputTokens: 1_000_000}
+	_ = b.Charge("anthropic", "claude-opus-4-7", usage)
+	if got := b.Remaining(); got != 0 {
+		t.Errorf("Remaining() after over-spend = %v, want 0", got)
+	}
+}
+
+func TestConcurrentCharge(t *testing.T) {
+	b := New()
+	usage := hippo.Usage{InputTokens: 100, OutputTokens: 100}
+	const goroutines = 5
+	const perGoroutine = 100
+
+	var wg sync.WaitGroup
+	for g := 0; g < goroutines; g++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for i := 0; i < perGoroutine; i++ {
+				if err := b.Charge("anthropic", "claude-haiku-4-5", usage); err != nil {
+					t.Errorf("Charge: %v", err)
+				}
+			}
+		}()
+	}
+	wg.Wait()
+
+	// Each charge: 100·$1/M + 100·$5/M = $0.0006. 500 calls → $0.30.
+	want := float64(goroutines*perGoroutine) * 0.0006
+	if got := b.Spent(); math.Abs(got-want) > 1e-9 {
+		t.Errorf("Spent() = %v after %d concurrent charges, want %v",
+			got, goroutines*perGoroutine, want)
+	}
+}
+
+func TestWithPricingOverride(t *testing.T) {
+	custom := &PricingTable{
+		Rates: map[string]Rate{
+			"custom:model-x": {Input: 100.0, Output: 200.0},
+		},
+	}
+	b := New(WithPricing(custom))
+	cost, err := b.EstimateCost("custom", "model-x", hippo.Usage{InputTokens: 1000, OutputTokens: 1000})
+	if err != nil {
+		t.Fatalf("EstimateCost: %v", err)
+	}
+	// 1000·100/M + 1000·200/M = 0.1 + 0.2 = 0.3
+	if math.Abs(cost-0.3) > 1e-9 {
+		t.Errorf("cost = %v, want 0.3", cost)
+	}
+}
+
+func TestPricingLookupHandlesDatedModelIds(t *testing.T) {
+	p := DefaultPricing()
+	r, ok := p.Lookup("anthropic", "claude-haiku-4-5-20250930")
+	if !ok {
+		t.Fatal("dated haiku id not resolved")
+	}
+	want := p.Rates["anthropic:claude-haiku-4-5"]
+	if r != want {
+		t.Errorf("rate = %+v, want %+v", r, want)
+	}
+}
