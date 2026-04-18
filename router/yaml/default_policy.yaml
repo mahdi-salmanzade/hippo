@@ -18,8 +18,11 @@ tasks:
 
   embed:
     privacy: local_only
+    # Embeddings ship with Pass-later semantic memory; prefer list
+    # stays empty until /api/embeddings is wired into the provider.
     prefer: []
     fallback: []
+    max_cost_usd: 0.0
 
   generate:
     privacy: cloud_ok
@@ -33,8 +36,11 @@ tasks:
 
   protect:
     privacy: local_only
-    prefer: []
-    fallback: []
+    prefer:
+      - ollama:llama3.3:70b
+    fallback:
+      - ollama:qwen2.5-coder:32b
+    max_cost_usd: 0.0
 
   reason:
     privacy: cloud_ok
