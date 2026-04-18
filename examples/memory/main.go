@@ -20,8 +20,14 @@ func main() {
 		os.Exit(1)
 	}
 
+	p, err := anthropic.New(anthropic.WithAPIKey(os.Getenv("ANTHROPIC_API_KEY")))
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+
 	b, err := hippo.New(
-		hippo.WithProvider(anthropic.New(os.Getenv("ANTHROPIC_API_KEY"))),
+		hippo.WithProvider(p),
 		hippo.WithMemory(store),
 	)
 	if err != nil {

@@ -23,8 +23,14 @@ func main() {
 		os.Exit(1)
 	}
 
+	ap, err := anthropic.New(anthropic.WithAPIKey(os.Getenv("ANTHROPIC_API_KEY")))
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+
 	b, err := hippo.New(
-		hippo.WithProvider(anthropic.New(os.Getenv("ANTHROPIC_API_KEY"))),
+		hippo.WithProvider(ap),
 		hippo.WithProvider(openai.New(os.Getenv("OPENAI_API_KEY"))),
 		hippo.WithProvider(ollama.New()),
 		hippo.WithRouter(r),
