@@ -190,9 +190,11 @@ func TestEstimateCostUsesCachedInputRateForOpenAI(t *testing.T) {
 	if err != nil {
 		t.Fatalf("EstimateCost: %v", err)
 	}
-	// gpt-5-nano: input $0.10/Mtok, output $0.40/Mtok, cached $0.01/Mtok.
-	// plain = 500*0.10/M = 5e-5; cached = 500*0.01/M = 5e-6; out = 100*0.40/M = 4e-5
-	want := 5e-5 + 5e-6 + 4e-5
+	// gpt-5-nano: input $0.05/Mtok, output $0.40/Mtok, cached $0.005/Mtok.
+	// plain  = (1000-500)*0.05/M = 2.5e-5
+	// cached = 500*0.005/M = 2.5e-6
+	// out    = 100*0.40/M = 4.0e-5
+	want := 2.5e-5 + 2.5e-6 + 4.0e-5
 	if math.Abs(cost-want) > 1e-12 {
 		t.Errorf("cost = %v, want %v", cost, want)
 	}

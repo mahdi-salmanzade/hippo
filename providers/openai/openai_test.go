@@ -317,12 +317,12 @@ func TestCallComputesCostViaBudget(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Call: %v", err)
 	}
-	// gpt-5-nano: in $0.10/Mtok, out $0.40/Mtok, cached $0.01/Mtok.
-	// plain_in = (1000-500)*0.10/M = 5e-5
-	// cached   = 500*0.01/M = 5e-6
-	// out      = 100*0.40/M = 4e-5
-	// total    = 9.5e-5
-	const want = 9.5e-5
+	// gpt-5-nano: in $0.05/Mtok, out $0.40/Mtok, cached $0.005/Mtok.
+	// plain_in = (1000-500)*0.05/M = 2.5e-5
+	// cached   = 500*0.005/M       = 2.5e-6
+	// out      = 100*0.40/M        = 4.0e-5
+	// total    = 6.75e-5
+	const want = 6.75e-5
 	const tol = 1e-9
 	if diff := resp.CostUSD - want; diff > tol || diff < -tol {
 		t.Errorf("CostUSD = %v, want %v", resp.CostUSD, want)

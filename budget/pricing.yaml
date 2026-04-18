@@ -6,14 +6,13 @@
 #
 # Rates are USD per 1,000,000 tokens. ContextWindow is in tokens.
 # supports_reasoning flags models that emit a reasoning trace (OpenAI
-# o-series and gpt-5-thinking; used by EstimateCost to add a buffer for
+# o-series and gpt-5 family; used by EstimateCost to add a buffer for
 # reasoning tokens).
 #
 # Keep entries sorted alphabetically inside each provider's models map.
 #
-# TODO(pre-v0.1.0): verify every non-Anthropic rate against the vendor's
-# pricing page before tagging a release. OpenAI rates below are
-# placeholders pending a live check of platform.openai.com/docs/pricing.
+# OpenAI rates verified 2026-04-18 against platform.openai.com/docs/pricing.
+# Anthropic rates last verified 2026-03 (same as previous table).
 
 providers:
   anthropic:
@@ -40,26 +39,26 @@ providers:
   openai:
     models:
       gpt-5:
-        input_per_mtok: 5.00
-        output_per_mtok: 20.00
-        cached_input_per_mtok: 0.50
+        input_per_mtok: 1.25
+        output_per_mtok: 10.00
+        cached_input_per_mtok: 0.125
         context_window: 400000
         supports_reasoning: true
       gpt-5-mini:
-        input_per_mtok: 1.00
-        output_per_mtok: 4.00
-        cached_input_per_mtok: 0.10
+        input_per_mtok: 0.25
+        output_per_mtok: 2.00
+        cached_input_per_mtok: 0.025
         context_window: 400000
         supports_reasoning: true
       gpt-5-nano:
-        input_per_mtok: 0.10
+        input_per_mtok: 0.05
         output_per_mtok: 0.40
-        cached_input_per_mtok: 0.01
+        cached_input_per_mtok: 0.005
         context_window: 400000
         supports_reasoning: false
       o4-mini:
-        input_per_mtok: 2.00
-        output_per_mtok: 8.00
-        cached_input_per_mtok: 0.20
+        input_per_mtok: 1.10
+        output_per_mtok: 4.40
+        cached_input_per_mtok: 0.275
         context_window: 200000
         supports_reasoning: true
