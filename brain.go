@@ -6,6 +6,8 @@ import (
 	"io"
 	"log/slog"
 	"math"
+	"strings"
+	"time"
 )
 
 // Brain is the top-level hippo entry point. A Brain bundles a set of
@@ -40,17 +42,19 @@ func New(opts ...Option) (*Brain, error) {
 // Pass 3 flow:
 //
 //  1. Selection. Router picks provider+model + cost estimate.
-//     Without a router, the first registered provider is used.
-//  2. Budget gate. If the estimated cost exceeds either
-//     Call.MaxCostUSD or the BudgetTracker's Remaining(), Call
-//     returns ErrBudgetExceeded before the provider is contacted.
-//  3. Dispatch. Provider serves the request.
-//  4. Charge. After a successful call, BudgetTracker.Charge records
-//     the real usage. Charge errors are logged, not surfaced —
-//     accounting gaps should not fail a call that already succeeded.
-//
-// Memory hydration and episode recording layer in on top of this in
-// the next commit.
+//  2. Budget gate. Estimated cost checked against Call.MaxCostUSD
+//     and BudgetTracker.Remaining(); exceeding either yields
+//     ErrBudgetExceeded.
+//  3. Memory hydration. When a Memory is wired and Call.UseMemory is
+//     non-zero, the Brain Recalls matching records and prepends them
+//     as a system-role message on the outgoing Call. Recall errors
+//     are logged but do not block the Call — memory is a helper,
+//     not a dependency.
+//  4. Dispatch. Provider serves the enriched Call.
+//  5. Charge. Post-call, BudgetTracker.Charge records real usage.
+//  6. Episode. When Memory is wired, a summary of the call is
+//     written back as an Episodic record. This happens in a
+//     background goroutine so it doesn't add latency.
 func (b *Brain) Call(ctx context.Context, c Call) (*Response, error) {
 	if len(b.cfg.providers) == 0 {
 		return nil, ErrNoProviderAvailable
@@ -87,19 +91,33 @@ func (b *Brain) Call(ctx context.Context, c Call) (*Response, error) {
 		enriched.Model = decision.Model
 	}
 
+	// Memory hydration. Recall runs with the call's ctx so a
+	// cancelled Call doesn't leave a hanging query.
+	var memoryHits []Record
+	if c.UseMemory.Mode != MemoryScopeNone && b.cfg.memory != nil {
+		hits, err := b.cfg.memory.Recall(ctx, c.Prompt, memoryQueryFromScope(c.UseMemory))
+		if err != nil {
+			b.logger.Warn("hippo: memory recall failed (serving without memory)", "err", err)
+		} else {
+			memoryHits = hits
+			enriched = injectMemory(enriched, hits)
+		}
+	}
+
 	resp, err := p.Call(ctx, enriched)
 	if err != nil {
 		return nil, err
 	}
 
-	// The Brain owns routing metadata — backfill if the provider
-	// adapter didn't populate these fields itself.
+	// The Brain owns routing and memory metadata — backfill if the
+	// provider adapter didn't populate these fields itself.
 	if resp.Provider == "" {
 		resp.Provider = decision.Provider
 	}
 	if resp.Model == "" {
 		resp.Model = decision.Model
 	}
+	resp.MemoryHits = recordIDs(memoryHits)
 
 	// Charge real usage. Unknown pricing is a warning, not a failure
 	// — hippo prefers serving under-priced calls to blocking on a
@@ -109,6 +127,12 @@ func (b *Brain) Call(ctx context.Context, c Call) (*Response, error) {
 			b.logger.Warn("hippo: budget charge failed", "err", err,
 				"provider", resp.Provider, "model", resp.Model)
 		}
+	}
+
+	// Episode recording runs async with context.Background() so a
+	// cancelled call ctx doesn't abort the write.
+	if b.cfg.memory != nil {
+		go b.recordEpisode(c, resp)
 	}
 
 	return resp, nil
@@ -163,6 +187,103 @@ func (b *Brain) Stream(ctx context.Context, c Call) (<-chan StreamChunk, error) 
 	_ = ctx
 	_ = c
 	return nil, ErrNotImplemented
+}
+
+// memoryQueryFromScope translates a user-intent MemoryScope (what a
+// Call asks for) into a concrete backend MemoryQuery (retrieval
+// parameters). The defaults here are conservative — callers who need
+// finer control can still build a MemoryQuery themselves and call
+// Memory.Recall directly.
+func memoryQueryFromScope(s MemoryScope) MemoryQuery {
+	switch s.Mode {
+	case MemoryScopeRecent:
+		return MemoryQuery{
+			Since: time.Now().Add(-24 * time.Hour),
+			Limit: 5,
+		}
+	case MemoryScopeByTags:
+		return MemoryQuery{
+			Tags:  s.Tags,
+			Limit: 10,
+		}
+	case MemoryScopeFull:
+		return MemoryQuery{Limit: 20}
+	default: // MemoryScopeNone — caller shouldn't reach here, but be safe.
+		return MemoryQuery{}
+	}
+}
+
+// injectMemory prepends recalled records to the outgoing Call as a
+// system-role Message so providers that have a dedicated system
+// field (Anthropic, OpenAI) fold it into the right place and
+// providers that don't still see it first in the message list.
+func injectMemory(c Call, records []Record) Call {
+	if len(records) == 0 {
+		return c
+	}
+	var b strings.Builder
+	b.WriteString("[Relevant context from memory]\n")
+	for _, r := range records {
+		b.WriteString("- ")
+		b.WriteString(r.Timestamp.Format(time.RFC3339))
+		b.WriteString(": ")
+		b.WriteString(r.Content)
+		b.WriteByte('\n')
+	}
+	sysMsg := Message{Role: "system", Content: b.String()}
+	c.Messages = append([]Message{sysMsg}, c.Messages...)
+	return c
+}
+
+// recordEpisode stores an Episodic record summarising this Call.
+// Summaries keep content raw (no LLM-summarisation) — the
+// MemMachine-inspired "raw is queen" policy from Pass 2 applies
+// here too. Response.Text is truncated to 500 chars for the trace
+// body, which is enough to re-recognise the interaction later
+// without blowing up the DB on long completions.
+func (b *Brain) recordEpisode(c Call, resp *Response) {
+	var content strings.Builder
+	content.WriteString("prompt: ")
+	content.WriteString(c.Prompt)
+	content.WriteString("\n→ response: ")
+	if len(resp.Text) > 500 {
+		content.WriteString(resp.Text[:500])
+		content.WriteString("…")
+	} else {
+		content.WriteString(resp.Text)
+	}
+
+	var tags []string
+	if c.Task != "" {
+		tags = append(tags, "task:"+string(c.Task))
+	}
+	if resp.Provider != "" {
+		tags = append(tags, "provider:"+resp.Provider)
+	}
+
+	rec := &Record{
+		Kind:       MemoryEpisodic,
+		Timestamp:  time.Now(),
+		Content:    content.String(),
+		Tags:       tags,
+		Importance: 0.5,
+		Source:     "brain.Call",
+	}
+	if err := b.cfg.memory.Add(context.Background(), rec); err != nil {
+		b.logger.Warn("hippo: episode record failed", "err", err)
+	}
+}
+
+// recordIDs extracts the ID of every record in the slice.
+func recordIDs(records []Record) []string {
+	if len(records) == 0 {
+		return nil
+	}
+	out := make([]string, len(records))
+	for i, r := range records {
+		out[i] = r.ID
+	}
+	return out
 }
 
 // Close releases all resources held by the Brain, including the Memory
