@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/mahdi-salmanzade/hippo"
+	"github.com/mahdi-salmanzade/hippo/internal/dotenv"
 )
 
 // TestIntegrationCallHaiku makes a real call to Anthropic's cheapest
@@ -16,6 +17,7 @@ import (
 //
 // Expected cost per run: < $0.001 (a few dozen tokens each direction).
 func TestIntegrationCallHaiku(t *testing.T) {
+	_ = dotenv.Load() // best-effort, picks up repo-root .env for local dev
 	key := os.Getenv("ANTHROPIC_API_KEY")
 	if key == "" {
 		t.Skip("ANTHROPIC_API_KEY not set; skipping integration test")

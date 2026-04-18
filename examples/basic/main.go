@@ -13,10 +13,15 @@ import (
 	"os"
 
 	"github.com/mahdi-salmanzade/hippo"
+	"github.com/mahdi-salmanzade/hippo/internal/dotenv"
 	"github.com/mahdi-salmanzade/hippo/providers/anthropic"
 )
 
 func main() {
+	// Load .env from the current directory (or any parent). Missing
+	// file is not an error; already-set env vars win.
+	_ = dotenv.Load()
+
 	p, err := anthropic.New(
 		anthropic.WithAPIKey(os.Getenv("ANTHROPIC_API_KEY")),
 		anthropic.WithModel("claude-opus-4-7"),
