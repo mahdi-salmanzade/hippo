@@ -74,9 +74,17 @@ func WithLogger(l *slog.Logger) Option {
 }
 
 // Open creates or opens a SQLite-backed memory store at the given path.
-// Pass ":memory:" for an in-memory store (used by tests). The schema
-// is created idempotently on every Open; upgrading an existing file
-// is safe as long as the schema hasn't drifted manually.
+//
+// Pass ":memory:" for an in-memory store — useful for tests. Note that
+// with the pure-Go modernc.org/sqlite driver, ":memory:" gives each
+// database/sql connection its own independent in-memory database; a
+// write on connection A is invisible to a read on connection B. Open
+// therefore forces MaxOpenConns to 1 when path is ":memory:", and
+// logs a warning if the caller supplied WithMaxOpenConns(>1). Tests
+// that exercise concurrent access should use a temp file instead.
+//
+// WAL mode is enabled on file-backed stores via a DSN PRAGMA; the
+// schema is created idempotently on every Open.
 func Open(path string, opts ...Option) (hippo.Memory, error) {
 	cfg := config{
 		busyTimeout: defaultBusyTimeout,
@@ -85,6 +93,17 @@ func Open(path string, opts ...Option) (hippo.Memory, error) {
 	}
 	for _, o := range opts {
 		o(&cfg)
+	}
+
+	// Guard against the per-connection-isolated :memory: footgun.
+	// Keep the log quiet when the user never set WithMaxOpenConns.
+	if path == ":memory:" && cfg.maxOpenConn != 1 {
+		if cfg.maxOpenConn > 1 {
+			cfg.logger.Warn("memory/sqlite: MaxOpenConns>1 ignored for :memory: store; forcing 1",
+				"requested", cfg.maxOpenConn,
+			)
+		}
+		cfg.maxOpenConn = 1
 	}
 
 	// modernc.org/sqlite registers under the driver name "sqlite".
