@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/mahdi-salmanzade/hippo"
-	"github.com/mahdi-salmanzade/hippo/memory"
 	memsqlite "github.com/mahdi-salmanzade/hippo/memory/sqlite"
 	"github.com/mahdi-salmanzade/hippo/providers/anthropic"
 )
@@ -33,8 +32,8 @@ func main() {
 
 	ctx := context.Background()
 
-	_ = store.Add(ctx, &memory.Record{
-		Kind:       memory.Profile,
+	_ = store.Add(ctx, &hippo.Record{
+		Kind:       hippo.MemoryProfile,
 		Timestamp:  time.Now(),
 		Content:    "User prefers concise, one-paragraph answers.",
 		Tags:       []string{"preference", "style"},

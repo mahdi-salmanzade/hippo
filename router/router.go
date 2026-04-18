@@ -1,45 +1,16 @@
-// Package router defines the policy layer that chooses which Provider
-// and model should serve a given Call.
+// Package router holds implementations of hippo.Router together with
+// the configuration types they consume.
 //
-// A Router is the component between the Brain and its providers. It
-// takes a Call plus the Brain's remaining budget and returns a Decision
-// identifying the chosen provider/model and a human-readable reason.
-//
-// hippo ships with a YAML-driven Router (see yaml.go) that is
-// hot-reloadable; custom Routers can be supplied via hippo.WithRouter.
+// The Router interface and Decision return type live in the root hippo
+// package; this package imports them. Policy and TaskPolicy here are the
+// declarative config shape consumed by YAMLRouter — not every Router
+// implementation has to use them.
 package router
 
-import (
-	"context"
+import "github.com/mahdi-salmanzade/hippo"
 
-	"github.com/mahdi-salmanzade/hippo"
-)
-
-// Router is the policy interface. Implementations must be safe for
-// concurrent use.
-type Router interface {
-	// Name returns a short identifier for logging.
-	Name() string
-	// Route picks a Provider/Model for c given the remaining USD
-	// budget. It must not perform network I/O.
-	Route(ctx context.Context, c hippo.Call, budget float64) (Decision, error)
-}
-
-// Decision is the Router's response: which provider to call, which model
-// to use, and how much it is expected to cost.
-type Decision struct {
-	// Provider is the hippo.Provider.Name to dispatch to.
-	Provider string
-	// Model is the concrete model id to pass to the provider.
-	Model string
-	// EstimatedCostUSD is the Router's pre-flight cost estimate.
-	EstimatedCostUSD float64
-	// Reason is a human-readable one-liner explaining the choice.
-	Reason string
-}
-
-// Policy is a declarative description of how each TaskKind should be
-// routed. It is what yaml.go unmarshals into.
+// Policy is the declarative description of how each TaskKind should be
+// routed. YAMLRouter unmarshals YAML into this shape.
 type Policy struct {
 	// Tasks maps each TaskKind to the policy governing it.
 	Tasks map[hippo.TaskKind]TaskPolicy

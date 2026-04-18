@@ -1,5 +1,5 @@
-// Package sqlite implements hippo's Memory interface on top of a local
-// SQLite database via modernc.org/sqlite (pure Go, CGO-free).
+// Package sqlite implements hippo.Memory on top of a local SQLite
+// database via modernc.org/sqlite (pure Go, CGO-free).
 //
 // The schema is intentionally small: one records table with columns for
 // id, kind, timestamp, content, tags (JSON array), importance, embedding
@@ -11,36 +11,38 @@ import (
 	"context"
 	"time"
 
-	"github.com/mahdi-salmanzade/hippo/memory"
+	"github.com/mahdi-salmanzade/hippo"
 )
 
-// Store is the SQLite-backed Memory implementation.
-type Store struct {
+// store is the SQLite-backed hippo.Memory implementation. Unexported
+// because users only interact with it through the hippo.Memory returned
+// by Open.
+type store struct {
 	path string
 	// TODO: *sql.DB handle; prepared statements; embedding config.
 }
 
-// Open returns a Store backed by the SQLite database at path. The file
-// is created (with schema) if it does not yet exist.
+// Open returns a hippo.Memory backed by the SQLite database at path. The
+// file is created (with schema) if it does not yet exist.
 //
 // Open does not import modernc.org/sqlite at scaffolding time; the
 // dependency is added when the implementation lands.
-func Open(path string) (*Store, error) {
+func Open(path string) (hippo.Memory, error) {
 	// TODO: open sql.DB with driver "sqlite", apply schema migrations,
-	// prepare statements, return Store.
-	return &Store{path: path}, nil
+	// prepare statements, return store.
+	return &store{path: path}, nil
 }
 
-// Add persists a record. See memory.Memory.
-func (s *Store) Add(ctx context.Context, rec *memory.Record) error {
+// Add persists a record. See hippo.Memory.
+func (s *store) Add(ctx context.Context, rec *hippo.Record) error {
 	_ = ctx
 	_ = rec
 	// TODO: assign ID if empty, INSERT into records, insert into FTS.
 	panic("memory/sqlite: Add not implemented")
 }
 
-// Recall queries the store. See memory.Memory.
-func (s *Store) Recall(ctx context.Context, query string, scope memory.Scope) ([]memory.Record, error) {
+// Recall queries the store. See hippo.Memory.
+func (s *store) Recall(ctx context.Context, query string, scope hippo.Scope) ([]hippo.Record, error) {
 	_ = ctx
 	_ = query
 	_ = scope
@@ -49,8 +51,8 @@ func (s *Store) Recall(ctx context.Context, query string, scope memory.Scope) ([
 }
 
 // Prune removes records older than before, excluding profile records.
-// See memory.Memory.
-func (s *Store) Prune(ctx context.Context, before time.Time) error {
+// See hippo.Memory.
+func (s *store) Prune(ctx context.Context, before time.Time) error {
 	_ = ctx
 	_ = before
 	// TODO: DELETE WHERE kind != 'profile' AND timestamp < ?.
@@ -58,7 +60,7 @@ func (s *Store) Prune(ctx context.Context, before time.Time) error {
 }
 
 // Close closes the underlying DB handle.
-func (s *Store) Close() error {
+func (s *store) Close() error {
 	// TODO: close prepared statements and db.
 	return nil
 }

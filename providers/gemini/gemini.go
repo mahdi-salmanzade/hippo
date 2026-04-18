@@ -9,61 +9,60 @@ import (
 	"github.com/mahdi-salmanzade/hippo"
 )
 
-// Provider is the Gemini implementation of hippo.Provider.
-type Provider struct {
+type client struct {
 	apiKey     string
 	baseURL    string
 	httpClient *http.Client
 	// TODO: default model, safety settings.
 }
 
-// Option configures a Provider during construction.
-type Option func(*Provider)
+// Option configures a client during construction.
+type Option func(*client)
 
 // WithBaseURL overrides the default Gemini endpoint.
-func WithBaseURL(u string) Option { return func(p *Provider) { p.baseURL = u } }
+func WithBaseURL(u string) Option { return func(c *client) { c.baseURL = u } }
 
 // WithHTTPClient supplies a custom *http.Client.
-func WithHTTPClient(c *http.Client) Option { return func(p *Provider) { p.httpClient = c } }
+func WithHTTPClient(h *http.Client) Option { return func(c *client) { c.httpClient = h } }
 
-// New constructs a Provider bound to the supplied API key.
-func New(apiKey string, opts ...Option) *Provider {
-	p := &Provider{
+// New constructs a Gemini provider bound to the supplied API key.
+func New(apiKey string, opts ...Option) hippo.Provider {
+	c := &client{
 		apiKey:  apiKey,
 		baseURL: "https://generativelanguage.googleapis.com",
 	}
 	for _, o := range opts {
-		o(p)
+		o(c)
 	}
 	// TODO: default http.Client, model catalogue.
-	return p
+	return c
 }
 
 // Name returns "gemini".
-func (p *Provider) Name() string { return "gemini" }
+func (c *client) Name() string { return "gemini" }
 
 // Models returns the currently supported Gemini models.
-func (p *Provider) Models() []hippo.ModelInfo { return nil }
+func (c *client) Models() []hippo.ModelInfo { return nil }
 
 // Privacy returns PrivacyCloudOK.
-func (p *Provider) Privacy() hippo.PrivacyTier { return hippo.PrivacyCloudOK }
+func (c *client) Privacy() hippo.PrivacyTier { return hippo.PrivacyCloudOK }
 
 // EstimateCost returns a USD estimate without a network call.
-func (p *Provider) EstimateCost(c hippo.Call) (float64, error) {
-	_ = c
+func (c *client) EstimateCost(call hippo.Call) (float64, error) {
+	_ = call
 	return 0, nil
 }
 
 // Call executes a generateContent request synchronously.
-func (p *Provider) Call(ctx context.Context, c hippo.Call) (*hippo.Response, error) {
+func (c *client) Call(ctx context.Context, call hippo.Call) (*hippo.Response, error) {
 	_ = ctx
-	_ = c
+	_ = call
 	panic("gemini: Call not implemented")
 }
 
 // Stream executes a streamGenerateContent request.
-func (p *Provider) Stream(ctx context.Context, c hippo.Call) (<-chan hippo.StreamChunk, error) {
+func (c *client) Stream(ctx context.Context, call hippo.Call) (<-chan hippo.StreamChunk, error) {
 	_ = ctx
-	_ = c
+	_ = call
 	panic("gemini: Stream not implemented")
 }

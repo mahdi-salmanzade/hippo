@@ -1,9 +1,6 @@
 package hippo
 
-import (
-	"context"
-	"time"
-)
+import "time"
 
 // TaskKind classifies the intent of a Call so the router can pick an
 // appropriate provider/model. Task kinds are coarse on purpose: routing
@@ -216,25 +213,83 @@ type ModelInfo struct {
 	SupportsEmbeddings bool
 }
 
-// Provider is the contract every LLM backend must satisfy.
+// MemoryKind classifies a Record's temporal role.
 //
-// The same interface is re-exported from the providers package as
-// providers.Provider via a type alias so concrete provider packages have a
-// natural name to implement without creating an import cycle back to hippo.
-type Provider interface {
-	// Name returns a short, stable identifier (e.g. "anthropic").
-	Name() string
-	// Models enumerates the models this provider exposes.
-	Models() []ModelInfo
-	// Privacy reports the strongest tier this provider can satisfy.
-	Privacy() PrivacyTier
-	// EstimateCost returns a pre-flight USD estimate for a Call. It must
-	// be cheap: the router may call it many times across candidates.
-	EstimateCost(c Call) (float64, error)
-	// Call executes a Call synchronously and returns the full Response.
-	Call(ctx context.Context, c Call) (*Response, error)
-	// Stream executes a Call and emits StreamChunk values on the
-	// returned channel. The channel is closed when the stream ends
-	// (success or error).
-	Stream(ctx context.Context, c Call) (<-chan StreamChunk, error)
+// hippo distinguishes three kinds of memory, modelled after the
+// cognitive-science triplet:
+//
+//   - Working: short-lived context for the current task.
+//   - Episodic: timestamped events the Brain has observed.
+//   - Profile: long-lived facts about the user or environment.
+type MemoryKind string
+
+const (
+	// MemoryWorking: short-lived per-session context.
+	MemoryWorking MemoryKind = "working"
+	// MemoryEpisodic: timestamped events.
+	MemoryEpisodic MemoryKind = "episodic"
+	// MemoryProfile: durable facts about the user/environment.
+	MemoryProfile MemoryKind = "profile"
+)
+
+// Record is one entry in the memory store.
+//
+// Content is kept in its raw form; hippo deliberately does not summarise
+// content before storage, to preserve fidelity for later retrieval. If
+// summarisation is desired it should happen at Recall time or in the
+// application layer.
+type Record struct {
+	// ID uniquely identifies the record. Empty on Add; the backend
+	// assigns one.
+	ID string
+	// Kind is the temporal role of this record.
+	Kind MemoryKind
+	// Timestamp is when the event occurred (not when it was stored).
+	Timestamp time.Time
+	// Content is the raw text. Not pre-processed.
+	Content string
+	// Tags are arbitrary labels for filtering and retrieval.
+	Tags []string
+	// Importance is a 0..1 heuristic used to weight retrieval and to
+	// exempt records from Prune when high enough. Backend-specific.
+	Importance float64
+	// Embedding is an optional vector representation of Content. Filled
+	// lazily by backends that support embeddings. A non-nil Embedding
+	// must match the backend's configured dimensionality.
+	Embedding []float32
+	// Source optionally identifies the origin of the record (e.g. a
+	// Call ID, a conversation ID, a file path).
+	Source string
+}
+
+// Scope narrows a Recall query.
+//
+// The zero value selects the most-recent records across all kinds, up to
+// a backend-chosen default limit.
+type Scope struct {
+	// Kinds restricts matches to these MemoryKinds. Empty means any.
+	Kinds []MemoryKind
+	// Tags requires a record to have at least one of these tags. Empty
+	// means no tag filter.
+	Tags []string
+	// Since restricts matches to records on or after this timestamp.
+	Since time.Time
+	// Limit caps the number of records returned. Zero uses the backend
+	// default (typically 10).
+	Limit int
+	// MinImportance filters out records below this importance score.
+	MinImportance float64
+}
+
+// Decision is the Router's response: which provider to call, which model
+// to use, and how much it is expected to cost.
+type Decision struct {
+	// Provider is the Provider.Name to dispatch to.
+	Provider string
+	// Model is the concrete model id to pass to the provider.
+	Model string
+	// EstimatedCostUSD is the Router's pre-flight cost estimate.
+	EstimatedCostUSD float64
+	// Reason is a human-readable one-liner explaining the choice.
+	Reason string
 }

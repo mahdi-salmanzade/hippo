@@ -78,30 +78,3 @@ func WithDefaultModel(model string) Option {
 		return nil
 	}
 }
-
-// The following interfaces are declared at the hippo package level (rather
-// than in their respective subpackages) so that options.go can reference
-// them without importing the subpackages, which would create import
-// cycles. Each subpackage defines a matching type (usually a type alias)
-// so users can construct them naturally.
-
-// Memory is the persistence interface for typed memory. See the memory
-// subpackage for the canonical definition and backends.
-type Memory interface {
-	// Close releases any resources held by the backend.
-	Close() error
-}
-
-// BudgetTracker caps total spend across Calls. See the budget subpackage
-// for the canonical definition and implementations.
-type BudgetTracker interface {
-	// Remaining returns the USD budget still available.
-	Remaining() float64
-}
-
-// Router selects a Provider and Model for a Call. See the router
-// subpackage for the canonical definition.
-type Router interface {
-	// Name returns a short identifier for logging.
-	Name() string
-}
