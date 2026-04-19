@@ -94,3 +94,65 @@ which is the wrong failure mode for first-run UX. Good enough for
 v0.1.0; if users report they want eventual-consistency with
 live-connecting servers, we'd add a "rebuild Brain on MCP connect"
 path.
+
+## Pass 11 questions
+
+### Q11.1 — Decay formula wording: half-life vs e-folding time
+
+Spec prose used "half-life 24h". First implementation passed that
+value through `exp(-age/τ)` with τ=24, which is e-folding time, not
+half-life. Test expected 0.25 at 48h but got 1/e² ≈ 0.135. Switched
+the SQL expression to `pow(0.5, age/half_life)` so the literal
+meaning of half-life holds.
+
+modernc.org/sqlite exposes `pow()`, `ln()`, and `exp()`. If a future
+pinned driver drops them, the Go-side fallback is the equivalent
+`exp(-age × ln(2) / half_life)` — algebraically identical, no
+additional round-trip.
+
+### Q11.2 — `WithEmbedder` on Brain: carry-through, not auto-start
+
+Spec: "If also WithMemory is set, Brain starts the backfill worker
+at construction time and tears it down on Close()." Implementation
+skipped that — Brain just records the embedder via `Brain.Embedder()`;
+the store starts its own backfill when the caller asks
+(`sqlite.Store.StartBackfill`). The web package calls `StartBackfill`
+explicitly in `BuildBrain` so end users get the auto-start
+experience, but library callers who import hippo directly control
+the worker lifecycle without surprise goroutines.
+
+Rationale: the `hippo.Memory` interface is deliberately narrow
+(Add/Recall/Prune/Close); adding an optional StartBackfill method
+there would bleed a backend concern into the contract. A type
+assertion in the web bundle builder keeps the split clean.
+
+### Q11.3 — Full-scan cosine — good enough for v0.2
+
+Cosine over 10K × 768-dim records fits in ~30 MB and scans under
+10 ms on a laptop. For single-user daemons (hippo's primary target)
+this is more than enough. ANN indexes (hnswlib-go, usearch) are a
+v0.3+ conversation if anyone brings real corpus sizes.
+
+### Q11.4 — FTS tokenisation of hyphenated fixtures
+
+The migration-reconcile test originally used `bare-legacy` as a
+fixture string. FTS5's `porter unicode61` tokeniser treats hyphens
+as word boundaries, so a quoted-phrase MATCH for `"bare-legacy"` hit
+zero rows even though the content was indexed. Test was reshaped to
+query by recency rather than FTS so the assertion covers data
+preservation, not tokenisation edge cases.
+
+No user-facing fix: hippo doesn't escape hyphens in search input
+because the underlying tokenisation is the right behaviour for
+humans searching natural text. Users who want to bypass the
+tokeniser can pick semantic mode on `/memory`.
+
+### Q11.5 — `Record.Importance` returns effective, not base
+
+Recall now writes the decayed value into the returned record's
+Importance field instead of echoing the base. It's the value callers
+most often want — "how confident is this hit, right now?" — and the
+one the MinImportance cutoff runs against, so returning a different
+value would be confusing. Callers that need the base value can look
+it up by ID on the store's `DB()`; that escape hatch is expected to
+stay rare.

@@ -13,8 +13,9 @@ typed memory in SQLite; enforces a USD budget; and speaks Model Context
 Protocol out of the box. Everything ships in one 19 MB binary, CGO-free,
 with a minimum dependency tree.
 
-> **Status: v0.1.0 — alpha.** The public API may change in breaking ways
-> before v1.0. See the [changelog](./CHANGELOG.md) for what's in.
+> **Status: v0.2.0 — alpha.** Semantic memory, nucleus retrieval, and
+> auto-prune all shipped in v0.2; the public API may still change in
+> breaking ways before v1.0. See the [changelog](./CHANGELOG.md).
 
 ## Quick start (library)
 
@@ -78,23 +79,46 @@ b, _ := hippo.New(
 Streaming works across all three with a single channel-based API that
 folds tool calls and thinking traces into one event stream.
 
-### Typed memory
+### Typed memory with semantic recall
 
 Memory is working / episodic / profile, not an undifferentiated vector
 blob. Records carry kind, tags, importance, and an optional embedding.
-The SQLite backend uses FTS5 for keyword recall.
+The SQLite backend uses FTS5 for keyword recall and pure-Go cosine
+similarity over stored vectors for semantic recall — no ANN index
+dependency for the v0.2 scale (up to ~10K records).
 
 ```go
-store, _ := sqlite.Open("~/.hippo/memory.db")
+// Local embedder via Ollama — no cloud key required.
+emb := ollama.NewEmbedder(ollama.WithEmbedderModel("nomic-embed-text"))
+store, _ := sqlite.Open("~/.hippo/memory.db", sqlite.WithEmbedder(emb))
+
+// Backfill worker fills embeddings for older records in the background.
+stop, _ := store.(interface {
+    StartBackfill(context.Context, sqlite.BackfillConfig) (func(), error)
+}).StartBackfill(ctx, sqlite.BackfillConfig{Embedder: emb})
+defer stop()
+
 b, _ := hippo.New(
     hippo.WithProvider(p),
     hippo.WithMemory(store),
+    hippo.WithEmbedder(emb),
 )
-resp, _ := b.Call(ctx, hippo.Call{
-    Prompt:    "What did we discuss about rate limiting?",
-    UseMemory: hippo.MemoryScope{Mode: hippo.MemoryScopeRecent},
+
+// Ask a semantic question: the query text is embedded, cosine-scored
+// against the store, and nucleus-expanded by a one-hour window around
+// each hit so conversation-adjacent turns come along for the ride.
+recs, _ := store.Recall(ctx, "billing refactor wip", hippo.MemoryQuery{
+    Semantic:          true,
+    HybridWeight:      0.6,
+    TemporalExpansion: 1 * time.Hour,
+    Limit:             5,
 })
 ```
+
+Importance decays per-kind (Working 24h half-life, Episodic 30d,
+Profile never) so stale records fall behind in ranking automatically.
+`MinImportance` cutoffs run against the decayed value; each recall
+also bumps an access_count that boosts frequently-retrieved rows.
 
 ### Cost-aware routing
 
@@ -161,6 +185,7 @@ combination — memory + cost + tools + MCP — packaged as one binary.
 - [`examples/basic`](./examples/basic) — minimal single-provider Call
 - [`examples/streaming`](./examples/streaming) — streaming with SSE
 - [`examples/memory`](./examples/memory) — persist and retrieve across calls
+- [`examples/semantic`](./examples/semantic) — semantic + hybrid + nucleus recall
 - [`examples/routing`](./examples/routing) — YAML policy across three providers
 - [`examples/tools`](./examples/tools) — parallel local tool execution
 - [`examples/mcp`](./examples/mcp) — MCP server tools via Anthropic
@@ -174,10 +199,8 @@ combination — memory + cost + tools + MCP — packaged as one binary.
 
 ## Roadmap
 
-- **v0.2** — semantic memory via local embeddings, per-conversation memory
-  scoping, MCP prompts and resources.
-- **v0.3** — Gemini + OpenRouter providers, extra CLI subcommands
-  (run, ask, budget, memory).
+- **v0.3** — Gemini + OpenRouter providers, per-conversation memory
+  scoping, MCP prompts and resources, extra CLI subcommands.
 - **v1.0** — API freeze.
 
 ## Credits

@@ -11,7 +11,7 @@ package version
 // Version is the semantic-version tag of this build. Bump before
 // tagging a release; the tag itself stays the source of truth for
 // the published binary.
-const Version = "0.1.0"
+const Version = "0.2.0"
 
 // Commit is the short SHA of the commit this binary was built from.
 // The release workflow overrides it via -ldflags; local `go build`
