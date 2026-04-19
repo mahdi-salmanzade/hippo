@@ -21,10 +21,40 @@ minimal dependency tree.
 ## Install
 
 ```bash
+go install github.com/mahdi-salmanzade/hippo/cmd/hippo@latest
+```
+
+Or as a library:
+
+```bash
 go get github.com/mahdi-salmanzade/hippo
 ```
 
 Requires Go 1.23 or newer.
+
+## Web UI (`hippo serve`)
+
+```bash
+hippo init               # create ~/.hippo/config.yaml
+hippo serve --open       # launch the UI on http://127.0.0.1:7844
+```
+
+The UI runs inside the single binary — templates, CSS, JS, and htmx
+are all embedded via `go:embed`. No Node toolchain, no npm, no build
+step. Pages:
+
+- **Chat** — pick provider/model/task, toggle memory/tools, stream
+  responses live via SSE.
+- **Spend** — total, per-provider and per-task spend; recent-calls
+  table polled every 3s.
+- **Config** — add/remove provider credentials and default models,
+  edit budget, toggle memory. Saving reconstructs the Brain.
+- **Policy** — edit the routing YAML in-browser; save validates and
+  hot-swaps the router.
+
+Binding is localhost-only by default. To expose on the network, set
+`server.auth_token` in the config (or pass `--auth-token`); the server
+refuses to start on a non-localhost address without one.
 
 ## Quick start
 
@@ -95,12 +125,11 @@ Respect to each of these projects; they shaped hippo's design.
 ## Roadmap
 
 - **v0.1** — Anthropic + OpenAI + Ollama providers, SQLite memory backend,
-  YAML routing, embedded pricing table.
-- **v0.2** — Gemini + OpenRouter providers, streaming across all providers,
-  tool calling normalised across providers.
-- **v0.3** — MCP (Model Context Protocol) integration, semantic retrieval via
+  YAML routing, embedded pricing table, web UI + `hippo serve`.
+- **v0.2** — MCP (Model Context Protocol) integration, semantic retrieval via
   local embeddings.
-- **v0.4** — `hippo` CLI (run, ask, budget, memory subcommands).
+- **v0.3** — Gemini + OpenRouter providers, extra CLI subcommands
+  (run, ask, budget, memory).
 
 ## License
 
