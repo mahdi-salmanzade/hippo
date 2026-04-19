@@ -507,6 +507,14 @@ func (b *Brain) streamWithTools(
 	var fullText, fullThinking strings.Builder
 	var allToolCalls []ToolCall
 	hops := 0
+	// echoedModel tracks the actual model id the provider reports on
+	// its per-turn Usage chunks, so the terminal aggregated chunk
+	// carries the dated variant (e.g. "claude-haiku-4-5-20250930")
+	// rather than the caller's alias — and so a no-router Brain
+	// whose decision.Model is empty still gets a usable Model on the
+	// final chunk.
+	echoedModel := decision.Model
+	echoedProvider := decision.Provider
 
 	emit := func(chunk StreamChunk) bool {
 		select {
@@ -566,9 +574,24 @@ func (b *Brain) streamWithTools(
 				}
 			case StreamChunkUsage:
 				// Buffer — one aggregated usage chunk lands at the
-				// very end, not per turn.
+				// very end, not per turn. Capture the model/provider
+				// the adapter stamped (more specific than the router's
+				// decision — the decision's Model can be empty for
+				// no-router Brains, and is always the alias rather
+				// than the dated variant the API echoed back). Also
+				// accumulate CostUSD so a Brain with no budget tracker
+				// still reports a real cost on the terminal chunk
+				// (budget.EstimateCost requires the tracker; the
+				// provider's pre-computed CostUSD does not).
 				u := chunk.Usage
 				turnUsage = u
+				totalCost += chunk.CostUSD
+				if chunk.Model != "" {
+					echoedModel = chunk.Model
+				}
+				if chunk.Provider != "" {
+					echoedProvider = chunk.Provider
+				}
 			case StreamChunkError:
 				if !emit(chunk) {
 					return
@@ -587,7 +610,7 @@ func (b *Brain) streamWithTools(
 		}
 
 		if len(turnToolCalls) == 0 {
-			b.emitTerminalStreamUsage(ctx, original, decision, memoryHits, out,
+			b.emitTerminalStreamUsage(ctx, original, echoedProvider, echoedModel, memoryHits, out,
 				totalUsage, &totalCost, fullText.String(), fullThinking.String(), allToolCalls,
 				nil)
 			return
@@ -595,7 +618,7 @@ func (b *Brain) streamWithTools(
 
 		hops++
 		if hops > b.cfg.maxToolHops {
-			b.emitTerminalStreamUsage(ctx, original, decision, memoryHits, out,
+			b.emitTerminalStreamUsage(ctx, original, echoedProvider, echoedModel, memoryHits, out,
 				totalUsage, &totalCost, fullText.String(), fullThinking.String(), allToolCalls,
 				ErrMaxToolHopsExceeded)
 			return
@@ -636,13 +659,20 @@ func (b *Brain) streamWithTools(
 
 // emitTerminalStreamUsage wraps up a streaming Call: charges budget,
 // emits the aggregated StreamChunkUsage (and an error chunk if the
-// stream ended on a hop cap), and queues the episode record. finalErr
-// non-nil means hop cap hit — emit the usage first so the consumer
-// has the aggregated state, then emit the error, then return.
+// stream ended on a hop cap), and queues the episode record.
+//
+// providerName / modelName are the echoed values captured from the
+// provider's per-turn Usage chunks — NOT decision.Provider/.Model
+// directly — so (a) a no-router Brain whose decision.Model is empty
+// still gets a populated Model on the terminal chunk, and (b) the
+// dated variant the API echoed back ("claude-haiku-4-5-20250930")
+// flows through rather than the caller's alias. finalErr non-nil
+// means hop cap hit — emit the usage first so the consumer has the
+// aggregated state, then the error.
 func (b *Brain) emitTerminalStreamUsage(
 	ctx context.Context,
 	original Call,
-	decision Decision,
+	providerName, modelName string,
 	memoryHits []Record,
 	out chan<- StreamChunk,
 	totalUsage Usage,
@@ -653,12 +683,12 @@ func (b *Brain) emitTerminalStreamUsage(
 ) {
 	cost := *totalCost
 	if b.cfg.budget != nil {
-		if est, err := b.cfg.budget.EstimateCost(decision.Provider, decision.Model, totalUsage); err == nil {
+		if est, err := b.cfg.budget.EstimateCost(providerName, modelName, totalUsage); err == nil {
 			cost = est
 		}
-		if err := b.cfg.budget.Charge(decision.Provider, decision.Model, totalUsage); err != nil {
+		if err := b.cfg.budget.Charge(providerName, modelName, totalUsage); err != nil {
 			b.logger.Warn("hippo: stream budget charge failed", "err", err,
-				"provider", decision.Provider, "model", decision.Model)
+				"provider", providerName, "model", modelName)
 		}
 	}
 
@@ -668,8 +698,8 @@ func (b *Brain) emitTerminalStreamUsage(
 		Type:     StreamChunkUsage,
 		Usage:    &usage,
 		CostUSD:  cost,
-		Provider: decision.Provider,
-		Model:    decision.Model,
+		Provider: providerName,
+		Model:    modelName,
 	}:
 	case <-ctx.Done():
 		return
@@ -682,8 +712,8 @@ func (b *Brain) emitTerminalStreamUsage(
 			ToolCalls:  allToolCalls,
 			Usage:      totalUsage,
 			CostUSD:    cost,
-			Provider:   decision.Provider,
-			Model:      decision.Model,
+			Provider:   providerName,
+			Model:      modelName,
 			MemoryHits: recordIDs(memoryHits),
 		}
 		go b.recordEpisode(original, resp)
