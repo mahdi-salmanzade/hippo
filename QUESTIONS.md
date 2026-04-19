@@ -48,3 +48,49 @@ revisit with Option 1.
 the EventSource immediately, so the real window is ~100ms; the
 5-minute cap is just a safety net against leaking sessions from
 browsers that crashed mid-turn. No need to configure.
+
+## Pass 10 questions
+
+### Q10.1 — Prefix separator for MCP tool names
+
+**Context.** The spec copy used examples like `dubai.search`, but
+hippo's `Tool.Name()` pattern is `^[a-zA-Z_][a-zA-Z0-9_]{0,63}$` —
+dots are not permitted. The root cause is downstream: Anthropic and
+OpenAI both require `^[a-zA-Z0-9_-]{1,64}$` for function names and
+reject dots at request time. Relaxing hippo's pattern would not help
+because the provider adapters would fail later.
+
+**Decision.** Use `_` as the prefix separator. A server named `echo`
+exposing tool `echo` appears to hippo as `echo_echo`. Tools whose
+remote name contains characters that can't be expressed in the
+provider's allowed set (say `search.v2`) are skipped with a Warn log
+— the caller can either rename on the server side or add an explicit
+prefix that normalizes the surrounding name.
+
+If MCP ever standardises prefix handling itself, revisit.
+
+### Q10.2 — Protocol version tolerance
+
+hippo targets MCP `2025-06-18`. Version mismatch logs a Warn but does
+not fail the connection; real-world MCP servers vary across
+`2024-11-05`, `2025-03-26`, and newer revisions, and the parts hippo
+actually uses (initialize, tools/list, tools/call) have stayed
+stable. If a revision lands that changes the tool-call payload
+shape, we'll add a pinned compatibility matrix.
+
+### Q10.3 — Bundle-time connect timeout: one-shot vs retry
+
+Servers that fail the initial connect get a single 10-second attempt,
+then are logged and skipped. The Client's own reconnect loop then
+continues in the background — but we don't re-add the skipped client
+to the Brain after the fact, so a server that comes online after
+bundle construction stays out of the current Brain. The user can
+re-save the config page to rebuild.
+
+Alternative considered: defer the Brain build until every MCP server
+has either connected or given up. Rejected because it turns "my
+stdio server is broken" into "hippo serve hangs for 10s × N",
+which is the wrong failure mode for first-run UX. Good enough for
+v0.1.0; if users report they want eventual-consistency with
+live-connecting servers, we'd add a "rebuild Brain on MCP connect"
+path.

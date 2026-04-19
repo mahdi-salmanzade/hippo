@@ -2,18 +2,19 @@
 
 **A Go LLM client with a memory.**
 
-🚧 **Alpha — building in public.** APIs will change without notice until v0.1.
+hippo is a pure-Go library for talking to LLMs. Four properties set it apart
+from other Go LLM clients:
 
-hippo is a pure-Go library for talking to LLMs. It has three properties that
-set it apart from other Go LLM clients:
-
-1. **Unified providers.** One API over Anthropic, OpenAI, Gemini, Ollama, and
-   OpenRouter — plus a `Provider` interface if you want to plug in your own.
-2. **Memory-aware.** Persistent typed memory (working / episodic / profile) is
-   a first-class primitive, not something you bolt on top.
+1. **Unified providers.** One API over Anthropic, OpenAI, and Ollama —
+   plus a `Provider` interface if you want to plug in your own.
+2. **Memory-aware.** Persistent typed memory (working / episodic / profile)
+   is a first-class primitive, not something you bolt on top.
 3. **Cost-aware.** A live pricing table, per-call budget enforcement, and a
    router that picks the cheapest model able to satisfy your privacy and
    quality constraints.
+4. **MCP-native.** Tools exposed by any Model Context Protocol server
+   surface as first-class `hippo.Tool` instances over stdio or
+   Streamable HTTP, with automatic reconnect.
 
 All of it compiles to a single static binary (`CGO_ENABLED=0`), with a
 minimal dependency tree.
@@ -51,6 +52,9 @@ step. Pages:
   edit budget, toggle memory. Saving reconstructs the Brain.
 - **Policy** — edit the routing YAML in-browser; save validates and
   hot-swaps the router.
+- **MCP servers** — add stdio or HTTP MCP servers directly from the
+  config page; Test button performs a live handshake and reports the
+  tool count.
 
 Binding is localhost-only by default. To expose on the network, set
 `server.auth_token` in the config (or pass `--auth-token`); the server
@@ -96,12 +100,30 @@ func main() {
 }
 ```
 
+## MCP
+
+```go
+client, _ := mcp.Connect(ctx, []string{"npx", "-y", "@scope/your-mcp-server"},
+    mcp.WithPrefix("scope"))
+defer client.Close()
+
+brain, _ := hippo.New(
+    hippo.WithProvider(anthropic.New(anthropic.WithAPIKey(apiKey))),
+    hippo.WithMCPClients(client),
+)
+```
+
+Both stdio and Streamable HTTP transports are supported. The client
+targets MCP protocol version `2025-06-18` and auto-reconnects with
+exponential backoff if a server drops.
+
 ## Examples
 
 - [`examples/basic`](./examples/basic) — minimal single-provider Call
 - [`examples/streaming`](./examples/streaming) — streaming with SSE
 - [`examples/memory`](./examples/memory) — persist a fact, retrieve it on a later Call
 - [`examples/routing`](./examples/routing) — YAML-driven policy routing across three providers
+- [`examples/mcp`](./examples/mcp) — connect to an MCP server and use its tools from Anthropic
 
 ## Why hippo?
 
@@ -125,9 +147,10 @@ Respect to each of these projects; they shaped hippo's design.
 ## Roadmap
 
 - **v0.1** — Anthropic + OpenAI + Ollama providers, SQLite memory backend,
-  YAML routing, embedded pricing table, web UI + `hippo serve`.
-- **v0.2** — MCP (Model Context Protocol) integration, semantic retrieval via
-  local embeddings.
+  YAML routing, embedded pricing table, web UI + `hippo serve`, MCP client
+  (stdio + Streamable HTTP).
+- **v0.2** — Semantic retrieval via local embeddings, per-conversation memory
+  scoping, MCP prompts + resources.
 - **v0.3** — Gemini + OpenRouter providers, extra CLI subcommands
   (run, ask, budget, memory).
 
