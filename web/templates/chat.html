@@ -1,0 +1,47 @@
+<h1>Chat playground</h1>
+
+{{if not .Data.Providers}}
+<p class="hint">No providers configured. <a href="/config">Add credentials →</a></p>
+{{else}}
+<div class="chat">
+  <div class="controls">
+    <label>Provider
+      <select id="provider">
+        {{range .Data.Providers}}
+        <option value="{{.Name}}" data-default-model="{{.DefaultModel}}">{{.DisplayName}}</option>
+        {{end}}
+      </select>
+    </label>
+    <label>Model
+      <select id="model">
+        {{range (index .Data.Providers 0).Models}}
+        <option value="{{.}}">{{.}}</option>
+        {{end}}
+      </select>
+    </label>
+    <label>Task
+      <select id="task">
+        {{range .Data.Tasks}}
+        <option value="{{.}}" {{if eq . "generate"}}selected{{end}}>{{.}}</option>
+        {{end}}
+      </select>
+    </label>
+    <label class="toggle"><input type="checkbox" id="memory"><span>Memory</span></label>
+    <label class="toggle"><input type="checkbox" id="tools"><span>Tools</span></label>
+  </div>
+
+  <div class="messages" id="messages"></div>
+
+  <div class="composer">
+    <textarea id="prompt" placeholder="Ask the hippo..." rows="3"></textarea>
+    <button id="send" class="primary">Send</button>
+  </div>
+
+  <div class="status" id="status"></div>
+</div>
+{{end}}
+
+<script type="application/json" id="providers-data">
+{{- $provs := .Data.Providers -}}
+[{{range $i, $p := $provs}}{{if $i}},{{end}}{"name":"{{$p.Name}}","models":[{{range $j, $m := $p.Models}}{{if $j}},{{end}}"{{$m}}"{{end}}],"default":"{{$p.DefaultModel}}"}{{end}}]
+</script>

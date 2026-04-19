@@ -1,0 +1,10 @@
+<h1>Routing policy</h1>
+<p class="help">Edit the YAML below. Save to validate, write to disk, and hot-swap the router.</p>
+
+<form method="post" action="/policy" class="policy-form">
+  <label>Policy path
+    <input type="text" name="policy_path" value="{{.Data.Path}}" placeholder="~/.hippo/policy.yaml">
+  </label>
+  <textarea name="policy_yaml" rows="28" spellcheck="false">{{.Data.YAML}}</textarea>
+  <button type="submit" class="primary">Save and reload</button>
+</form>

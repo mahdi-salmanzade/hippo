@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{{.Title}} · hippo</title>
+<link rel="stylesheet" href="/static/app.css">
+<script src="/static/htmx.min.js" defer></script>
+<script src="/static/app.js" defer></script>
+</head>
+<body>
+<header class="topbar">
+  <a class="brand" href="/"><strong>hippo</strong></a>
+  <nav>
+    <a href="/chat" class="{{if eq .Active "chat"}}active{{end}}">Chat</a>
+    <a href="/spend" class="{{if eq .Active "spend"}}active{{end}}">Spend</a>
+    <a href="/config" class="{{if eq .Active "config"}}active{{end}}">Config</a>
+    <a href="/policy" class="{{if eq .Active "policy"}}active{{end}}">Policy</a>
+  </nav>
+  <span class="version">v{{.Version}}</span>
+</header>
+{{if .Flash}}<div class="flash ok">{{.Flash}}</div>{{end}}
+{{if .FlashErr}}<div class="flash err">{{.FlashErr}}</div>{{end}}
+{{range .Warnings}}<div class="flash warn">{{.}}</div>{{end}}
+<main>
+{{.Data}}
+</main>
+</body>
+</html>

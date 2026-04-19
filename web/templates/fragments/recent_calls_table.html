@@ -1,0 +1,21 @@
+{{if .}}
+<table class="recent-calls">
+<thead>
+<tr><th>Time</th><th>Provider</th><th>Model</th><th>Task</th><th>Prompt</th><th>Tokens</th><th>Cost</th><th>ms</th></tr>
+</thead>
+<tbody>
+{{range .}}
+<tr>
+  <td class="ts">{{humanTime .Timestamp}}</td>
+  <td>{{.Provider}}</td>
+  <td>{{.Model}}</td>
+  <td>{{.Task}}</td>
+  <td class="preview">{{.Prompt}}</td>
+  <td>{{.Usage.InputTokens}}→{{.Usage.OutputTokens}}</td>
+  <td>{{formatUSDShort .CostUSD}}</td>
+  <td>{{.LatencyMS}}</td>
+</tr>
+{{end}}
+</tbody>
+</table>
+{{else}}<p class="hint">No calls yet.</p>{{end}}

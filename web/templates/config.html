@@ -1,0 +1,61 @@
+<h1>Configuration</h1>
+<p class="help">Provider credentials and defaults. Saving reconstructs the Brain.</p>
+
+<form method="post" action="/config" class="config-form">
+  {{range .Data.Providers}}
+  <section class="card">
+    <header>
+      <h2>{{.DisplayName}}</h2>
+      <label class="toggle">
+        <input type="checkbox" name="{{.Name}}_enabled" {{if .Enabled}}checked{{end}}>
+        <span>Enabled</span>
+      </label>
+    </header>
+
+    {{if .NeedsAPIKey}}
+    <label>API key
+      <input type="password" name="{{.Name}}_api_key"
+        placeholder='{{if .APIKeySet}}[already set — leave blank to keep, "__clear__" to remove]{{else}}paste key{{end}}'>
+    </label>
+    {{end}}
+
+    {{if .NeedsBaseURL}}
+    <label>Base URL
+      <input type="text" name="{{.Name}}_base_url" value="{{.BaseURL}}" placeholder="http://localhost:11434">
+    </label>
+    {{end}}
+
+    <label>Default model
+      <select name="{{.Name}}_default_model">
+        <option value="">(none)</option>
+        {{$current := .DefaultModel}}
+        {{range .Models}}
+        <option value="{{.}}" {{if eq . $current}}selected{{end}}>{{.}}</option>
+        {{end}}
+      </select>
+    </label>
+  </section>
+  {{end}}
+
+  <section class="card">
+    <header><h2>Budget</h2></header>
+    <label>Ceiling (USD; 0 = unlimited)
+      <input type="number" step="0.01" min="0" name="budget_ceiling_usd" value="{{.Data.Budget.CeilingUSD}}">
+    </label>
+  </section>
+
+  <section class="card">
+    <header>
+      <h2>Memory</h2>
+      <label class="toggle">
+        <input type="checkbox" name="memory_enabled" {{if .Data.Memory.Enabled}}checked{{end}}>
+        <span>Enabled</span>
+      </label>
+    </header>
+    <label>Database path
+      <input type="text" name="memory_db_path" value="{{.Data.Memory.DBPath}}" placeholder="~/.hippo/memory.db">
+    </label>
+  </section>
+
+  <button type="submit" class="primary">Save</button>
+</form>

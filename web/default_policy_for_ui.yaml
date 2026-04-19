@@ -1,0 +1,53 @@
+# Embedded default routing policy for hippo.
+#
+# hippo ships with this policy so yaml.Load("") returns a working
+# Router without requiring users to drop a file on disk. The Brain
+# uses it when no WithRouter option is passed and memory is configured,
+# or when examples want a turn-key experience.
+#
+# Users with real needs should copy this file, edit it, and pass the
+# path to yaml.Load(path). Keep entries sorted by task name.
+
+tasks:
+  classify:
+    privacy: cloud_ok
+    prefer:
+      - anthropic:claude-haiku-4-5
+      - openai:gpt-5-nano
+    max_cost_usd: 0.001
+
+  embed:
+    privacy: local_only
+    # Embeddings ship with Pass-later semantic memory; prefer list
+    # stays empty until /api/embeddings is wired into the provider.
+    prefer: []
+    fallback: []
+    max_cost_usd: 0.0
+
+  generate:
+    privacy: cloud_ok
+    prefer:
+      - anthropic:claude-sonnet-4-6
+      - anthropic:claude-haiku-4-5
+    fallback:
+      - openai:gpt-5-mini
+      - openai:gpt-5-nano
+    max_cost_usd: 0.05
+
+  protect:
+    privacy: local_only
+    prefer:
+      - ollama:llama3.3:70b
+    fallback:
+      - ollama:qwen2.5-coder:32b
+    max_cost_usd: 0.0
+
+  reason:
+    privacy: cloud_ok
+    prefer:
+      - anthropic:claude-opus-4-7
+      - anthropic:claude-sonnet-4-6
+    fallback:
+      - openai:gpt-5
+      - openai:gpt-5-mini
+    max_cost_usd: 0.10

@@ -1,0 +1,53 @@
+<h1>Spend</h1>
+
+<div class="spend-totals">
+  <div class="card">
+    <h3>Recent calls</h3>
+    <div class="big">{{formatUSDShort .Data.Total}}</div>
+    <p class="hint">Sum across rows held in the in-memory ring.</p>
+  </div>
+  <div class="card">
+    <h3>Budget</h3>
+    <div class="big">{{formatUSDShort .Data.BudgetSpent}}</div>
+    <p class="hint">Ceiling: {{formatUSDShort .Data.CeilingUSD}} · Remaining: {{formatUSDShort .Data.BudgetRemain}}</p>
+  </div>
+</div>
+
+<section class="card">
+  <h2>By provider</h2>
+  {{if .Data.ByProvider}}
+  <table class="bars">
+    {{$total := .Data.Total}}
+    {{range .Data.ByProvider}}
+    <tr>
+      <td class="name">{{.Provider}}</td>
+      <td class="bar"><span style="width:{{formatPct .USD $total}}"></span></td>
+      <td class="val">{{formatUSDShort .USD}}</td>
+    </tr>
+    {{end}}
+  </table>
+  {{else}}<p class="hint">No spend yet.</p>{{end}}
+</section>
+
+<section class="card">
+  <h2>By task</h2>
+  {{if .Data.ByTask}}
+  <table class="bars">
+    {{$total := .Data.Total}}
+    {{range .Data.ByTask}}
+    <tr>
+      <td class="name">{{.Task}}</td>
+      <td class="bar"><span style="width:{{formatPct .USD $total}}"></span></td>
+      <td class="val">{{formatUSDShort .USD}}</td>
+    </tr>
+    {{end}}
+  </table>
+  {{else}}<p class="hint">No spend yet.</p>{{end}}
+</section>
+
+<section class="card">
+  <h2>Recent calls</h2>
+  <div hx-get="/api/recent-calls" hx-trigger="load, every 3s" hx-target="this" hx-swap="innerHTML">
+    {{template "fragments/recent_calls_table.html" .Data.RecentCalls}}
+  </div>
+</section>
