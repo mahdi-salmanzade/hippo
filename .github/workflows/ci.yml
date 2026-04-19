@@ -42,3 +42,21 @@ jobs:
 
       - name: Build (static, CGO off)
         run: go build -trimpath ./...
+
+  fresh-home:
+    name: fresh-home smoke (Linux)
+    needs: test
+    runs-on: ubuntu-latest
+    env:
+      CGO_ENABLED: "0"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.23"
+          check-latest: true
+
+      - name: Run fresh-HOME smoke test
+        run: bash scripts/fresh-home-test.sh
