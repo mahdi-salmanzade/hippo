@@ -1,66 +1,26 @@
 # hippo
 
-**A Go LLM client with a memory.**
+**A single-binary Go LLM client with memory, cost-awareness, and MCP.**
 
-hippo is a pure-Go library for talking to LLMs. Four properties set it apart
-from other Go LLM clients:
+[![CI](https://github.com/mahdi-salmanzade/hippo/actions/workflows/ci.yml/badge.svg)](https://github.com/mahdi-salmanzade/hippo/actions/workflows/ci.yml)
+[![Go](https://img.shields.io/badge/go-1.23+-00ADD8)](https://go.dev/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](./LICENSE)
+[![Release](https://img.shields.io/github/v/release/mahdi-salmanzade/hippo?include_prereleases)](https://github.com/mahdi-salmanzade/hippo/releases)
 
-1. **Unified providers.** One API over Anthropic, OpenAI, and Ollama —
-   plus a `Provider` interface if you want to plug in your own.
-2. **Memory-aware.** Persistent typed memory (working / episodic / profile)
-   is a first-class primitive, not something you bolt on top.
-3. **Cost-aware.** A live pricing table, per-call budget enforcement, and a
-   router that picks the cheapest model able to satisfy your privacy and
-   quality constraints.
-4. **MCP-native.** Tools exposed by any Model Context Protocol server
-   surface as first-class `hippo.Tool` instances over stdio or
-   Streamable HTTP, with automatic reconnect.
+hippo is a pure-Go LLM client you import as a library or run as a standalone
+binary. It unifies Anthropic, OpenAI, and Ollama behind one API; persists
+typed memory in SQLite; enforces a USD budget; and speaks Model Context
+Protocol out of the box. Everything ships in one 19 MB binary, CGO-free,
+with a minimum dependency tree.
 
-All of it compiles to a single static binary (`CGO_ENABLED=0`), with a
-minimal dependency tree.
+> **Status: v0.1.0 — alpha.** The public API may change in breaking ways
+> before v1.0. See the [changelog](./CHANGELOG.md) for what's in.
 
-## Install
-
-```bash
-go install github.com/mahdi-salmanzade/hippo/cmd/hippo@latest
-```
-
-Or as a library:
+## Quick start (library)
 
 ```bash
 go get github.com/mahdi-salmanzade/hippo
 ```
-
-Requires Go 1.23 or newer.
-
-## Web UI (`hippo serve`)
-
-```bash
-hippo init               # create ~/.hippo/config.yaml
-hippo serve --open       # launch the UI on http://127.0.0.1:7844
-```
-
-The UI runs inside the single binary — templates, CSS, JS, and htmx
-are all embedded via `go:embed`. No Node toolchain, no npm, no build
-step. Pages:
-
-- **Chat** — pick provider/model/task, toggle memory/tools, stream
-  responses live via SSE.
-- **Spend** — total, per-provider and per-task spend; recent-calls
-  table polled every 3s.
-- **Config** — add/remove provider credentials and default models,
-  edit budget, toggle memory. Saving reconstructs the Brain.
-- **Policy** — edit the routing YAML in-browser; save validates and
-  hot-swaps the router.
-- **MCP servers** — add stdio or HTTP MCP servers directly from the
-  config page; Test button performs a live handshake and reports the
-  tool count.
-
-Binding is localhost-only by default. To expose on the network, set
-`server.auth_token` in the config (or pass `--auth-token`); the server
-refuses to start on a non-localhost address without one.
-
-## Quick start
 
 ```go
 package main
@@ -71,92 +31,154 @@ import (
     "os"
 
     "github.com/mahdi-salmanzade/hippo"
-    "github.com/mahdi-salmanzade/hippo/budget"
-    "github.com/mahdi-salmanzade/hippo/memory/sqlite"
     "github.com/mahdi-salmanzade/hippo/providers/anthropic"
 )
 
 func main() {
-    store, _ := sqlite.Open("hippo.db")
-
-    b, err := hippo.New(
-        hippo.WithProvider(anthropic.New(os.Getenv("ANTHROPIC_API_KEY"))),
-        hippo.WithMemory(store),
-        hippo.WithBudget(budget.New(budget.WithCeiling(5.00))),
-    )
-    if err != nil { panic(err) }
+    p, _ := anthropic.New(anthropic.WithAPIKey(os.Getenv("ANTHROPIC_API_KEY")))
+    b, _ := hippo.New(hippo.WithProvider(p))
     defer b.Close()
 
-    resp, err := b.Call(context.Background(), hippo.Call{
-        Task:      hippo.TaskGenerate,
-        Prompt:    "What did we discuss about rate limiting yesterday?",
-        UseMemory: hippo.MemoryScope{Mode: hippo.MemoryScopeRecent},
+    resp, _ := b.Call(context.Background(), hippo.Call{
+        Task:   hippo.TaskGenerate,
+        Prompt: "Say hi in two words.",
     })
-    if err != nil { panic(err) }
-
-    fmt.Println(resp.Text)
-    fmt.Printf("cost: $%.4f  |  memory hits: %d\n",
-        resp.CostUSD, len(resp.MemoryHits))
+    fmt.Println(resp.Text, "—", resp.Model, "— $", resp.CostUSD)
 }
 ```
 
-## MCP
+## Quick start (UI)
+
+```bash
+go install github.com/mahdi-salmanzade/hippo/cmd/hippo@latest
+hippo init               # writes ~/.hippo/config.yaml (mode 0600)
+hippo serve --open       # opens http://127.0.0.1:7844 in your browser
+```
+
+The web UI binds localhost-only by default. Expose it on the network by
+setting `server.auth_token` in the config (or passing `--auth-token`); the
+server refuses to start on a non-localhost address without one.
+
+## What you can build with it
+
+### Unified providers
+
+Anthropic (Messages API), OpenAI (Responses API), and Ollama (local) are
+first-class. Each provider is one package under `providers/`; adding a new
+one means implementing the `hippo.Provider` interface.
 
 ```go
-client, _ := mcp.Connect(ctx, []string{"npx", "-y", "@scope/your-mcp-server"},
-    mcp.WithPrefix("scope"))
-defer client.Close()
-
-brain, _ := hippo.New(
-    hippo.WithProvider(anthropic.New(anthropic.WithAPIKey(apiKey))),
-    hippo.WithMCPClients(client),
+b, _ := hippo.New(
+    hippo.WithProvider(anthropic.New(anthropic.WithAPIKey(ak))),
+    hippo.WithProvider(openai.New(openai.WithAPIKey(ok))),
+    hippo.WithProvider(ollama.New(ollama.WithBaseURL("http://localhost:11434"))),
 )
 ```
 
-Both stdio and Streamable HTTP transports are supported. The client
-targets MCP protocol version `2025-06-18` and auto-reconnects with
-exponential backoff if a server drops.
+Streaming works across all three with a single channel-based API that
+folds tool calls and thinking traces into one event stream.
+
+### Typed memory
+
+Memory is working / episodic / profile, not an undifferentiated vector
+blob. Records carry kind, tags, importance, and an optional embedding.
+The SQLite backend uses FTS5 for keyword recall.
+
+```go
+store, _ := sqlite.Open("~/.hippo/memory.db")
+b, _ := hippo.New(
+    hippo.WithProvider(p),
+    hippo.WithMemory(store),
+)
+resp, _ := b.Call(ctx, hippo.Call{
+    Prompt:    "What did we discuss about rate limiting?",
+    UseMemory: hippo.MemoryScope{Mode: hippo.MemoryScopeRecent},
+})
+```
+
+### Cost-aware routing
+
+A YAML policy picks provider and model per `Call.Task`, constrained by
+privacy tier, budget ceiling, and an embedded pricing table. Hot-reload
+on file edit is built in.
+
+```yaml
+tasks:
+  reason:
+    prefer: [anthropic:claude-opus-4-7, anthropic:claude-sonnet-4-6]
+    fallback: [openai:gpt-5, openai:gpt-5-mini]
+    max_cost_usd: 0.10
+```
+
+### Tools, with or without MCP
+
+Register local Go tools via `WithTools`; they execute in parallel with
+bounded concurrency and feed results back through the provider's
+tool-call loop.
+
+```go
+b, _ := hippo.New(hippo.WithProvider(p), hippo.WithTools(weatherTool, searchTool))
+```
+
+Or connect a Model Context Protocol server — stdio or Streamable HTTP —
+and its tools surface automatically:
+
+```go
+client, _ := mcp.Connect(ctx, []string{"npx", "-y", "@scope/server"},
+    mcp.WithPrefix("scope"))
+defer client.Close()
+
+b, _ := hippo.New(hippo.WithProvider(p), hippo.WithMCPClients(client))
+```
+
+hippo targets MCP protocol `2025-06-18`; older servers are tolerated with
+a warning. Reconnect with exponential backoff runs in the background.
+
+### Single-binary UI
+
+`hippo serve` embeds templates, CSS, htmx, and static assets via
+`go:embed` — no Node, no npm, no build step. Provider credentials,
+routing policy, MCP servers, and spend dashboards all edit in the
+browser.
+
+## Why hippo?
+
+| | hippo | any-llm-go | LiteLLM | LangChainGo |
+|---|---|---|---|---|
+| Single binary | ✓ | ✓ | ✗ (Python) | ✗ |
+| Built-in memory store | ✓ | ✗ | ✗ | ✓ (many, heavy) |
+| Budget tracking | ✓ | ✗ | ✓ | ✗ |
+| Routing policy | ✓ (YAML, hot-reload) | ✗ | ✓ | partial |
+| MCP client | ✓ | ✗ | ✗ | partial |
+| Embedded web UI | ✓ | ✗ | ✓ (Python) | ✗ |
+| Dependencies | 1 (SQLite) + YAML | minimal | huge | large |
+
+Respect to each project; they shaped hippo's design. hippo's wedge is the
+combination — memory + cost + tools + MCP — packaged as one binary.
 
 ## Examples
 
 - [`examples/basic`](./examples/basic) — minimal single-provider Call
 - [`examples/streaming`](./examples/streaming) — streaming with SSE
-- [`examples/memory`](./examples/memory) — persist a fact, retrieve it on a later Call
-- [`examples/routing`](./examples/routing) — YAML-driven policy routing across three providers
-- [`examples/mcp`](./examples/mcp) — connect to an MCP server and use its tools from Anthropic
+- [`examples/memory`](./examples/memory) — persist and retrieve across calls
+- [`examples/routing`](./examples/routing) — YAML policy across three providers
+- [`examples/tools`](./examples/tools) — parallel local tool execution
+- [`examples/mcp`](./examples/mcp) — MCP server tools via Anthropic
 
-## Why hippo?
+## Docs
 
-There are already good Go LLM clients. hippo's wedge is the combination of
-memory and cost, packaged as a single binary.
-
-- [**any-llm-go**](https://github.com/mozilla-ai/any-llm-go) (Mozilla) is the
-  closest analogue on the unified-provider axis. It's lean and focused. hippo
-  is broader: memory, budget, and a routing policy are all in the box.
-- [**LangChainGo**](https://github.com/tmc/langchaingo) is a port of a much
-  bigger ecosystem. If you want chains, agents, and hundreds of integrations,
-  use it. hippo deliberately does not go there — we stay small so you can
-  build agents *on top* of hippo, not inside it.
-- **LiteLLM** is Python, widely used as a cost-aware gateway. Running it as
-  a sidecar adds a process and a network hop. hippo folds the gateway, the
-  memory store, and the client into one in-process Go library — no extra
-  services, no CGO.
-
-Respect to each of these projects; they shaped hippo's design.
+- [Install guide](./docs/INSTALL.md) — paths, prerequisites, troubleshooting
+- [Contributing](./docs/CONTRIBUTING.md) — local workflow, PR checklist
+- [Changelog](./CHANGELOG.md) — release history
+- [QUESTIONS.md](./QUESTIONS.md) — design decision record
 
 ## Roadmap
 
-- **v0.1** — Anthropic + OpenAI + Ollama providers, SQLite memory backend,
-  YAML routing, embedded pricing table, web UI + `hippo serve`, MCP client
-  (stdio + Streamable HTTP).
-- **v0.2** — Semantic retrieval via local embeddings, per-conversation memory
-  scoping, MCP prompts + resources.
+- **v0.2** — semantic memory via local embeddings, per-conversation memory
+  scoping, MCP prompts and resources.
 - **v0.3** — Gemini + OpenRouter providers, extra CLI subcommands
   (run, ask, budget, memory).
-
-## License
-
-MIT © 2026 Mahdi Salmanzade.
+- **v1.0** — API freeze.
 
 ## Credits
 
@@ -165,3 +187,7 @@ hippo's design borrows ideas from
 [mem0](https://github.com/mem0ai/mem0), and
 [MemMachine](https://github.com/memmachine-ai/memmachine). None of them are
 bundled; the debt is intellectual.
+
+## License
+
+MIT © 2026 Mahdi Salmanzade. See [LICENSE](./LICENSE).
