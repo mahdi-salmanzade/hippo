@@ -1,0 +1,201 @@
+package web
+
+import (
+	"sort"
+	"sync"
+	"time"
+
+	"github.com/mahdi-salmanzade/hippo"
+)
+
+// defaultRecentCap is how many completed calls State keeps. The UI's
+// recent-calls table polls this ring on a 3s timer; 100 rows is plenty
+// for a playground and cheap in memory (~20KB worst-case).
+const defaultRecentCap = 100
+
+// State is the in-process bookkeeping for the web server: completed
+// calls for the recent-calls ring, aggregated spend by provider/task,
+// plus a session map for streaming chat turns. It is kept outside the
+// hippo.Brain by design — Brain stays ignorant of the UI so the library
+// core remains reusable without pulling the web package in.
+type State struct {
+	mu       sync.RWMutex
+	recent   []CallRecord
+	cap      int
+	sessions map[string]*ChatSession
+}
+
+// CallRecord is one line of the recent-calls table. Prompt/Response are
+// truncated in Record (see truncatePreview) so the ring stays cheap to
+// walk and render.
+type CallRecord struct {
+	Timestamp time.Time
+	Provider  string
+	Model     string
+	Task      string
+	Prompt    string
+	Response  string
+	Usage     hippo.Usage
+	CostUSD   float64
+	LatencyMS int64
+	ToolCalls int
+	Error     string
+}
+
+// NewState builds a State with the default capacity.
+func NewState() *State {
+	return &State{
+		cap:      defaultRecentCap,
+		sessions: make(map[string]*ChatSession),
+	}
+}
+
+// Record appends one CallRecord to the ring, evicting the oldest entry
+// once cap is reached.
+func (s *State) Record(r CallRecord) {
+	r.Prompt = truncatePreview(r.Prompt)
+	r.Response = truncatePreview(r.Response)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if len(s.recent) >= s.cap {
+		// Drop the oldest (index 0). Cheap for cap=100; a real
+		// ring would be nicer but for 100 rows the copy doesn't
+		// measurably cost.
+		copy(s.recent, s.recent[1:])
+		s.recent = s.recent[:len(s.recent)-1]
+	}
+	s.recent = append(s.recent, r)
+}
+
+// Recent returns up to n records, newest first.
+func (s *State) Recent(n int) []CallRecord {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if n <= 0 || n > len(s.recent) {
+		n = len(s.recent)
+	}
+	out := make([]CallRecord, n)
+	for i := 0; i < n; i++ {
+		out[i] = s.recent[len(s.recent)-1-i]
+	}
+	return out
+}
+
+// TotalSpend sums CostUSD across all recorded calls.
+func (s *State) TotalSpend() float64 {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	var total float64
+	for _, r := range s.recent {
+		total += r.CostUSD
+	}
+	return total
+}
+
+// SpendByProvider returns a provider → USD total. Providers absent from
+// the ring are omitted. Order is provider-name ascending.
+func (s *State) SpendByProvider() []ProviderSpend {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	m := map[string]float64{}
+	for _, r := range s.recent {
+		if r.Provider == "" {
+			continue
+		}
+		m[r.Provider] += r.CostUSD
+	}
+	out := make([]ProviderSpend, 0, len(m))
+	for k, v := range m {
+		out = append(out, ProviderSpend{Provider: k, USD: v})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Provider < out[j].Provider })
+	return out
+}
+
+// SpendByTask returns a task → USD total.
+func (s *State) SpendByTask() []TaskSpend {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	m := map[string]float64{}
+	for _, r := range s.recent {
+		key := r.Task
+		if key == "" {
+			key = "(none)"
+		}
+		m[key] += r.CostUSD
+	}
+	out := make([]TaskSpend, 0, len(m))
+	for k, v := range m {
+		out = append(out, TaskSpend{Task: k, USD: v})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Task < out[j].Task })
+	return out
+}
+
+// ProviderSpend is one row of SpendByProvider.
+type ProviderSpend struct {
+	Provider string
+	USD      float64
+}
+
+// TaskSpend is one row of SpendByTask.
+type TaskSpend struct {
+	Task string
+	USD  float64
+}
+
+// ChatSession is an in-flight chat turn: its parameters were POSTed via
+// /chat and the SSE stream at /chat/stream will consume them. Sessions
+// self-destruct on first stream attachment or after sessionTTL.
+type ChatSession struct {
+	ID        string
+	Call      hippo.Call
+	CreatedAt time.Time
+	Consumed  bool
+}
+
+// sessionTTL is the maximum time a session can sit unclaimed between
+// POST /chat and GET /chat/stream.
+const sessionTTL = 5 * time.Minute
+
+// PutSession stores a chat session keyed by id.
+func (s *State) PutSession(id string, sess *ChatSession) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.pruneSessionsLocked()
+	s.sessions[id] = sess
+}
+
+// TakeSession retrieves and removes a session by id. Returns nil if the
+// session is unknown or already consumed.
+func (s *State) TakeSession(id string) *ChatSession {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	sess, ok := s.sessions[id]
+	if !ok || sess.Consumed {
+		return nil
+	}
+	sess.Consumed = true
+	delete(s.sessions, id)
+	return sess
+}
+
+func (s *State) pruneSessionsLocked() {
+	cutoff := time.Now().Add(-sessionTTL)
+	for id, sess := range s.sessions {
+		if sess.CreatedAt.Before(cutoff) {
+			delete(s.sessions, id)
+		}
+	}
+}
+
+// truncatePreview trims a string to its first 200 characters, suffixing
+// "…" when the original was longer. Called on both Prompt and Response
+// before they enter the ring so the table stays light.
+func truncatePreview(s string) string {
+	const max = 200
+	if len(s) <= max {
+		return s
+	}
+	return s[:max] + "…"
+}
