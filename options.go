@@ -42,6 +42,12 @@ type config struct {
 	// c.tools by New() after all options have been applied so the
 	// name-collision check runs exactly once.
 	mcpSources []MCPToolSource
+
+	// embedder, when non-nil, signals that semantic memory should be
+	// available. The memory store sees it via WithEmbedder attached
+	// to Open; this field exists so Brain.New can pass the option
+	// through when callers choose to let Brain manage the store.
+	embedder Embedder
 }
 
 // Default option values. Exported as vars rather than consts so a
@@ -190,6 +196,23 @@ func WithMCPClients(clients ...MCPToolSource) Option {
 			}
 			c.mcpSources = append(c.mcpSources, cl)
 		}
+		return nil
+	}
+}
+
+// WithEmbedder records an Embedder against the Brain so code that
+// inspects Brain.Embedder() can find it. The Embedder itself must
+// also be wired into the memory backend (e.g. sqlite.WithEmbedder on
+// Open) to participate in retrieval; this option does not implicitly
+// attach or start a backfill worker.
+//
+// The main use case is the web package: it constructs one Embedder
+// up front, passes it to sqlite.Open AND to hippo.WithEmbedder, then
+// starts the backfill loop on the store. Library callers who don't
+// mind threading the embedder themselves can skip this option.
+func WithEmbedder(e Embedder) Option {
+	return func(c *config) error {
+		c.embedder = e
 		return nil
 	}
 }

@@ -92,6 +92,10 @@ func mergeMCPTools(c *config) error {
 	return nil
 }
 
+// Embedder returns the Embedder attached via WithEmbedder, or nil if
+// the Brain was constructed without semantic-memory support.
+func (b *Brain) Embedder() Embedder { return b.cfg.embedder }
+
 // Call dispatches c to a provider and returns the response.
 //
 // Flow:
