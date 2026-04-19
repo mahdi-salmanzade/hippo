@@ -1,0 +1,120 @@
+name: Release
+
+# Triggered on tag push matching v*.*.* (e.g. v0.1.0). Builds the hippo
+# CLI for five platform targets, packages each as a tar.gz (zip on
+# Windows), emits a SHA256SUMS file, and publishes everything as a
+# GitHub Release. CGO is disabled on every target so the artefacts are
+# statically-linked single binaries.
+#
+# The tag message (or auto-generated commit list) becomes the release
+# notes; we keep the workflow simple on purpose — the changelog lives
+# in CHANGELOG.md and is the source of truth for human-readable
+# release notes.
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: build ${{ matrix.goos }}/${{ matrix.goarch }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+          - goos: linux
+            goarch: arm64
+          - goos: darwin
+            goarch: amd64
+          - goos: darwin
+            goarch: arm64
+          - goos: windows
+            goarch: amd64
+    env:
+      CGO_ENABLED: "0"
+      GOOS: ${{ matrix.goos }}
+      GOARCH: ${{ matrix.goarch }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.23"
+          check-latest: true
+
+      - name: Resolve version metadata
+        id: meta
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          VERSION="${TAG#v}"
+          COMMIT="$(git rev-parse --short=7 HEAD)"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "commit=$COMMIT" >> "$GITHUB_OUTPUT"
+
+      - name: Build
+        id: build
+        run: |
+          OUT="hippo"
+          if [ "${{ matrix.goos }}" = "windows" ]; then
+            OUT="hippo.exe"
+          fi
+          mkdir -p dist/hippo
+          go build -trimpath \
+            -ldflags "-s -w -X github.com/mahdi-salmanzade/hippo/internal/version.Commit=${{ steps.meta.outputs.commit }}" \
+            -o "dist/hippo/$OUT" ./cmd/hippo
+          cp LICENSE README.md dist/hippo/
+
+          BASE="hippo-${{ steps.meta.outputs.version }}-${{ matrix.goos }}-${{ matrix.goarch }}"
+          if [ "${{ matrix.goos }}" = "windows" ]; then
+            (cd dist && zip -q -r "$BASE.zip" hippo)
+            echo "artifact=$BASE.zip" >> "$GITHUB_OUTPUT"
+          else
+            tar -C dist -czf "dist/$BASE.tar.gz" hippo
+            echo "artifact=$BASE.tar.gz" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: hippo-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: dist/${{ steps.build.outputs.artifact }}
+          if-no-files-found: error
+
+  publish:
+    name: publish release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Collect artifacts + SHA256SUMS
+        run: |
+          mkdir -p release
+          find artifacts -type f \( -name '*.tar.gz' -o -name '*.zip' \) -exec cp {} release/ \;
+          (cd release && sha256sum * > SHA256SUMS)
+          ls -la release
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release/*
+          generate_release_notes: true
+          body: |
+            See [CHANGELOG.md](./CHANGELOG.md) for the human-readable
+            release notes. The auto-generated commit list below is for
+            provenance.
+
+            Verify downloads against `SHA256SUMS`.
