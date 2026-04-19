@@ -42,7 +42,12 @@ type nowTool struct{}
 
 func (nowTool) Name() string            { return "now" }
 func (nowTool) Description() string     { return "Returns the current UTC time as RFC3339." }
-func (nowTool) Schema() json.RawMessage { return json.RawMessage(`{"type":"object","properties":{}}`) }
+func (nowTool) Schema() json.RawMessage {
+	// additionalProperties:false is required by OpenAI's strict mode
+	// (defaulted on) and harmless on Anthropic / Ollama. Every tool
+	// schema in this demo follows that same shape.
+	return json.RawMessage(`{"type":"object","properties":{},"additionalProperties":false}`)
+}
 func (nowTool) Execute(context.Context, json.RawMessage) (hippo.ToolResult, error) {
 	return hippo.ToolResult{Content: time.Now().UTC().Format(time.RFC3339)}, nil
 }
@@ -54,7 +59,7 @@ type addTool struct{}
 func (addTool) Name() string        { return "add" }
 func (addTool) Description() string { return "Adds two integers." }
 func (addTool) Schema() json.RawMessage {
-	return json.RawMessage(`{"type":"object","properties":{"a":{"type":"integer"},"b":{"type":"integer"}},"required":["a","b"]}`)
+	return json.RawMessage(`{"type":"object","properties":{"a":{"type":"integer"},"b":{"type":"integer"}},"required":["a","b"],"additionalProperties":false}`)
 }
 func (addTool) Execute(_ context.Context, args json.RawMessage) (hippo.ToolResult, error) {
 	var in struct{ A, B int }
