@@ -36,6 +36,12 @@ type config struct {
 	// within one turn when the provider returns multiple tool calls
 	// at once. Default 4; set to 1 for fully sequential execution.
 	maxParallelTools int
+
+	// mcpSources holds any WithMCPClients registrations. Each source
+	// contributes its Tools() to the final registry. Finalised into
+	// c.tools by New() after all options have been applied so the
+	// name-collision check runs exactly once.
+	mcpSources []MCPToolSource
 }
 
 // Default option values. Exported as vars rather than consts so a
@@ -156,6 +162,33 @@ func WithMaxParallelTools(n int) Option {
 	return func(c *config) error {
 		if n > 0 {
 			c.maxParallelTools = n
+		}
+		return nil
+	}
+}
+
+// MCPToolSource is any object that exposes a list of Tools — in
+// practice, a *mcp.Client. Declared as a narrow interface here so the
+// hippo root package stays cycle-free (the mcp package imports
+// hippo.Tool rather than the other way around).
+type MCPToolSource interface {
+	Tools() []Tool
+}
+
+// WithMCPClients registers MCP-backed tools alongside any tools
+// supplied via WithTools. Tool names across the local set and every
+// MCP client must be unique after prefixing; collisions surface as an
+// error from New so the caller can fix their configuration before any
+// dispatch happens.
+//
+// Zero clients is a valid no-op. nil clients are skipped silently.
+func WithMCPClients(clients ...MCPToolSource) Option {
+	return func(c *config) error {
+		for _, cl := range clients {
+			if cl == nil {
+				continue
+			}
+			c.mcpSources = append(c.mcpSources, cl)
 		}
 		return nil
 	}

@@ -57,7 +57,39 @@ func New(opts ...Option) (*Brain, error) {
 			return nil, err
 		}
 	}
+	if err := mergeMCPTools(&c); err != nil {
+		return nil, err
+	}
 	return &Brain{cfg: c, logger: c.logger}, nil
+}
+
+// mergeMCPTools folds every WithMCPClients source's Tools() into
+// c.tools. Runs after all options are applied so the final set is
+// the union of WithTools + all MCP sources, and a single ToolSet
+// constructor enforces name uniqueness across both.
+//
+// If no MCP sources were registered this is a no-op and c.tools
+// passes through unchanged.
+func mergeMCPTools(c *config) error {
+	if len(c.mcpSources) == 0 {
+		return nil
+	}
+	var tools []Tool
+	if c.tools != nil {
+		tools = append(tools, c.tools.All()...)
+	}
+	for _, src := range c.mcpSources {
+		tools = append(tools, src.Tools()...)
+	}
+	if len(tools) == 0 {
+		return nil
+	}
+	ts, err := NewToolSet(tools...)
+	if err != nil {
+		return fmt.Errorf("hippo: merge MCP tools: %w", err)
+	}
+	c.tools = ts
+	return nil
 }
 
 // Call dispatches c to a provider and returns the response.
