@@ -13,6 +13,8 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/mahdi-salmanzade/hippo/internal/version"
+	"github.com/mahdi-salmanzade/hippo/mcp"
 	"github.com/mahdi-salmanzade/hippo/web"
 )
 
@@ -28,7 +30,10 @@ func runServe(args []string) error {
 		return err
 	}
 
-	web.Version = version
+	web.Version = version.Version
+	// Announce the concrete hippo version on MCP initialize so
+	// server-side logs show which client connected.
+	mcp.ClientVersion = version.Version
 
 	cfg, err := web.Load(*configPath)
 	if err != nil {

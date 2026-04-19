@@ -5,34 +5,34 @@ import (
 	"fmt"
 	"runtime"
 	"runtime/debug"
+	"strings"
 
+	"github.com/mahdi-salmanzade/hippo/internal/version"
 	"github.com/mahdi-salmanzade/hippo/web"
-)
-
-// version / commit are set via -ldflags at build time:
-//   go build -ldflags "-X main.version=0.1.0 -X main.commit=$(git rev-parse --short HEAD)"
-var (
-	version = "dev"
-	commit  = ""
 )
 
 func runVersion(args []string) error {
 	fs := flag.NewFlagSet("version", flag.ExitOnError)
 	_ = fs.Parse(args)
 
-	c := commit
-	if c == "" {
-		c = readVCS()
+	commit := version.Commit
+	if commit == "" || commit == "unknown" {
+		if vcs := readVCS(); vcs != "" {
+			commit = vcs
+		}
 	}
-	web.Version = version
-	fmt.Printf("hippo %s (%s) %s %s/%s\n",
-		version, c, runtime.Version(), runtime.GOOS, runtime.GOARCH)
+	web.Version = version.Version
+	fmt.Printf("hippo %s (commit: %s, go: %s, %s/%s)\n",
+		version.Version,
+		commit,
+		strings.TrimPrefix(runtime.Version(), "go"),
+		runtime.GOOS, runtime.GOARCH)
 	return nil
 }
 
-// readVCS attempts to pull the commit short SHA from Go's embedded
-// build info (set when the module is built in a checked-out repo).
-// Returns "" on any failure.
+// readVCS pulls the commit short SHA from Go's embedded build info
+// (populated when the module is built in a checked-out repo). Returns
+// "" on any failure; callers fall back to version.Commit.
 func readVCS() string {
 	info, ok := debug.ReadBuildInfo()
 	if !ok {
