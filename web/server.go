@@ -244,6 +244,9 @@ func parseTemplates() (*template.Template, error) {
 			return t.Local().Format("15:04:05")
 		},
 		"version": func() string { return Version },
+		"add":     func(a, b int) int { return a + b },
+		"sub":     func(a, b int) int { return a - b },
+		"toFloat": func(i int64) float64 { return float64(i) },
 	}
 
 	t := template.New("").Funcs(funcs)

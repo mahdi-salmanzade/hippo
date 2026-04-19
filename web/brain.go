@@ -19,6 +19,25 @@ import (
 	yamlrouter "github.com/mahdi-salmanzade/hippo/router/yaml"
 )
 
+// Compile-time assertions that the sqlite store implements the
+// capability interfaces. They keep the type-assertion sites honest
+// even if the sqlite package's method signatures drift.
+var (
+	_ backfillStarter  = (*sqliteBackfillStub)(nil)
+	_ autoPruneStarter = (*sqliteBackfillStub)(nil)
+)
+
+// sqliteBackfillStub is never instantiated; it exists only so the
+// interface assertions above compile-check against the real store.
+type sqliteBackfillStub struct{}
+
+func (*sqliteBackfillStub) StartBackfill(ctx context.Context, cfg sqlite.BackfillConfig) (func(), error) {
+	return nil, nil
+}
+func (*sqliteBackfillStub) StartAutoPrune(ctx context.Context, cfg sqlite.PruneConfig, interval time.Duration) (func(), error) {
+	return nil, nil
+}
+
 // BrainBundle groups everything the web server constructed for a given
 // Config so the server can swap it atomically after a config edit and
 // close the previous bundle's owned resources on shutdown.
@@ -107,7 +126,15 @@ func BuildBrain(cfg *Config, logger *slog.Logger) (*BrainBundle, error) {
 		return bundle, nil
 	}
 
-	// Memory.
+	// Memory + embedder + backfill + auto-prune. Wiring order:
+	//   1. build the embedder (if configured) so the store can carry
+	//      its name for Model tracking at row level.
+	//   2. Open the store with sqlite.WithEmbedder so Recall can
+	//      reach the embedder.
+	//   3. After Open, start the backfill worker (lifetime tracked by
+	//      the store's worker list so Close unwinds it).
+	//   4. Start the auto-prune worker with the user-configured or
+	//      default policy.
 	if cfg.Memory.Enabled {
 		dbPath, err := ExpandPath(cfg.Memory.DBPath)
 		if err != nil {
@@ -116,12 +143,48 @@ func BuildBrain(cfg *Config, logger *slog.Logger) (*BrainBundle, error) {
 		if dbPath == "" {
 			dbPath = ":memory:"
 		}
-		mem, err := sqlite.Open(dbPath)
+
+		var embedder hippo.Embedder
+		if cfg.Memory.Embedder.Provider == "ollama" ||
+			(cfg.Memory.Embedder.Provider == "" && cfg.Providers["ollama"].Enabled) {
+			embedder = buildEmbedder(cfg)
+		}
+
+		var memOpts []sqlite.Option
+		if embedder != nil {
+			memOpts = append(memOpts, sqlite.WithEmbedder(embedder))
+			opts = append(opts, hippo.WithEmbedder(embedder))
+		}
+		mem, err := sqlite.Open(dbPath, memOpts...)
 		if err != nil {
 			return nil, fmt.Errorf("web: open memory: %w", err)
 		}
 		bundle.Memory = mem
 		opts = append(opts, hippo.WithMemory(mem))
+
+		// The concrete store supports StartBackfill / StartAutoPrune;
+		// type-assert against narrow interfaces to avoid leaking the
+		// package-private type.
+		if embedder != nil {
+			if bf, ok := mem.(backfillStarter); ok {
+				bfCfg := sqlite.BackfillConfig{Embedder: embedder}
+				if n := cfg.Memory.Embedder.BackfillBatchSize; n > 0 {
+					bfCfg.BatchSize = n
+				}
+				if sec := cfg.Memory.Embedder.BackfillIntervalS; sec > 0 {
+					bfCfg.Interval = time.Duration(sec) * time.Second
+				}
+				if _, err := bf.StartBackfill(context.Background(), bfCfg); err != nil {
+					logger.Warn("memory: StartBackfill failed", "err", err)
+				}
+			}
+		}
+		if ap, ok := mem.(autoPruneStarter); ok {
+			pruneCfg, interval := pruneFromConfig(cfg.Memory.Prune)
+			if _, err := ap.StartAutoPrune(context.Background(), pruneCfg, interval); err != nil {
+				logger.Warn("memory: StartAutoPrune failed", "err", err)
+			}
+		}
 	}
 
 	// Budget.
@@ -235,6 +298,61 @@ func headersFromMap(m map[string]string) http.Header {
 		h.Set(k, v)
 	}
 	return h
+}
+
+// backfillStarter is the optional capability a hippo.Memory may
+// expose to run an embedding backfill worker. Matched by the concrete
+// sqlite store; other memory backends can implement it when they
+// grow embedding support.
+type backfillStarter interface {
+	StartBackfill(ctx context.Context, cfg sqlite.BackfillConfig) (func(), error)
+}
+
+// autoPruneStarter likewise gates auto-prune wiring behind a narrow
+// interface so the web package stays backend-agnostic.
+type autoPruneStarter interface {
+	StartAutoPrune(ctx context.Context, cfg sqlite.PruneConfig, interval time.Duration) (func(), error)
+}
+
+// buildEmbedder constructs the embedder described by cfg.Memory.Embedder.
+// Only the ollama backend is supported today; the Provider field is a
+// future-proofing hook.
+func buildEmbedder(cfg *Config) hippo.Embedder {
+	ec := cfg.Memory.Embedder
+	model := ec.Model
+	if model == "" {
+		model = ollama.DefaultEmbeddingModel
+	}
+	baseURL := ec.BaseURL
+	if baseURL == "" {
+		baseURL = cfg.Providers["ollama"].BaseURL
+	}
+	opts := []ollama.EmbedderOption{ollama.WithEmbedderModel(model)}
+	if baseURL != "" {
+		opts = append(opts, ollama.WithEmbedderBaseURL(baseURL))
+	}
+	return ollama.NewEmbedder(opts...)
+}
+
+// pruneFromConfig maps the YAML-friendly PruneConfigBlock onto the
+// concrete sqlite.PruneConfig, falling back to DefaultPruneConfig for
+// any zero values.
+func pruneFromConfig(p PruneConfigBlock) (sqlite.PruneConfig, time.Duration) {
+	out := sqlite.DefaultPruneConfig()
+	if p.WorkingMaxAgeHours > 0 {
+		out.WorkingMaxAge = time.Duration(p.WorkingMaxAgeHours) * time.Hour
+	}
+	if p.EpisodicMaxAgeHours > 0 {
+		out.EpisodicMaxAge = time.Duration(p.EpisodicMaxAgeHours) * time.Hour
+	}
+	if p.EpisodicImportanceCutoff > 0 {
+		out.EpisodicImportanceCutoff = p.EpisodicImportanceCutoff
+	}
+	interval := time.Hour
+	if p.AutoPruneIntervalMinutes > 0 {
+		interval = time.Duration(p.AutoPruneIntervalMinutes) * time.Minute
+	}
+	return out, interval
 }
 
 // constructProvider builds one hippo.Provider from a (name, pc) pair.

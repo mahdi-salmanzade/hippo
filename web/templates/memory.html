@@ -1,0 +1,60 @@
+<h1>Memory</h1>
+
+<div class="memory-grid">
+  <section class="card memory-main">
+    <form method="get" action="/memory" class="memory-search">
+      <input type="text" name="q" value="{{.Data.Query}}" placeholder="Search memory…" autofocus>
+      <label><input type="radio" name="mode" value="keyword" {{if eq .Data.Mode "keyword"}}checked{{end}}> Keyword</label>
+      <label><input type="radio" name="mode" value="semantic" {{if eq .Data.Mode "semantic"}}checked{{end}}> Semantic</label>
+      <label><input type="radio" name="mode" value="hybrid" {{if eq .Data.Mode "hybrid"}}checked{{end}}> Hybrid</label>
+      <label><input type="radio" name="mode" value="recent" {{if eq .Data.Mode "recent"}}checked{{end}}> Recent</label>
+      <button type="submit" class="primary">Search</button>
+    </form>
+
+    {{if .Data.Records}}
+    <table class="memory-list">
+      <thead>
+        <tr><th>Time</th><th>Kind</th><th>Importance</th><th>Content</th><th></th></tr>
+      </thead>
+      <tbody>
+        {{range .Data.Records}}
+        <tr>
+          <td class="ts">{{humanTime .Timestamp}}</td>
+          <td><span class="kind kind-{{.Kind}}">{{.Kind}}</span></td>
+          <td>{{printf "%.2f" .Importance}}</td>
+          <td class="content">
+            {{.Content}}
+            {{if .Tags}}<div class="tags">{{range .Tags}}<span class="tag">{{.}}</span>{{end}}</div>{{end}}
+          </td>
+          <td>
+            <form method="post" action="/memory/record/{{.ID}}/delete"
+                  onsubmit="return confirm('Delete this record?')">
+              <button type="submit" class="danger small">Delete</button>
+            </form>
+          </td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+    <nav class="memory-pagination">
+      {{if gt .Data.Page 0}}<a href="?q={{.Data.Query}}&mode={{.Data.Mode}}&page={{sub .Data.Page 1}}">← previous</a>{{end}}
+      {{if .Data.HasNext}}<a href="?q={{.Data.Query}}&mode={{.Data.Mode}}&page={{add .Data.Page 1}}">next →</a>{{end}}
+    </nav>
+    {{else}}
+    <p class="hint">No records match — try a different query or mode.</p>
+    {{end}}
+  </section>
+
+  <aside class="card memory-sidebar">
+    <h3>Backfill</h3>
+    <div hx-get="/memory/backfill" hx-trigger="load, every 5s" hx-target="this" hx-swap="innerHTML">
+      {{template "fragments/memory_backfill.html" .Data.Backfill}}
+    </div>
+
+    <h3>Manual prune</h3>
+    <p class="hint">Removes Working records older than 24h.</p>
+    <form method="post" action="/memory/prune">
+      <button type="submit">Prune now</button>
+    </form>
+  </aside>
+</div>

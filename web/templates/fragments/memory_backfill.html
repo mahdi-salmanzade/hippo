@@ -1,0 +1,15 @@
+{{if not .HasEmbedder}}
+<p class="hint">No embedder configured. Enable Ollama on the Config page and install an embedding model (default: <code>nomic-embed-text</code>) to unlock semantic recall.</p>
+<p class="hint">Total records: {{.Total}}</p>
+{{else}}
+<p class="hint">
+  {{.Embedded}} / {{.Total}} embedded
+  {{if .Pending}}({{.Pending}} pending){{end}}
+</p>
+{{if gt .Total 0}}
+<div class="bar"><span style="width:{{formatPct (toFloat .Embedded) (toFloat .Total)}}"></span></div>
+{{end}}
+{{if .Running}}<p class="hint">Running…</p>{{end}}
+{{if .LastRunAt}}<p class="hint">Last run: {{.LastRunAt}}</p>{{end}}
+{{if .LastError}}<p class="err">{{.LastError}}</p>{{end}}
+{{end}}

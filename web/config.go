@@ -73,10 +73,36 @@ type BudgetConfig struct {
 	CeilingUSD float64 `yaml:"ceiling_usd"`
 }
 
-// MemoryConfig controls the memory store backing the Brain.
+// MemoryConfig controls the memory store backing the Brain. Nested
+// blocks configure the embedder, decay tuning, and prune policy;
+// omitting them falls back to hippo's shipping defaults so existing
+// v0.1.0 configs keep working.
 type MemoryConfig struct {
-	Enabled bool   `yaml:"enabled"`
-	DBPath  string `yaml:"db_path"`
+	Enabled  bool             `yaml:"enabled"`
+	DBPath   string           `yaml:"db_path"`
+	Embedder EmbedderConfig   `yaml:"embedder,omitempty"`
+	Prune    PruneConfigBlock `yaml:"prune,omitempty"`
+}
+
+// EmbedderConfig describes which embedder to use and how aggressively
+// the backfill worker runs. Provider currently accepts only "ollama";
+// more backends slot in later without breaking the shape.
+type EmbedderConfig struct {
+	Provider           string `yaml:"provider,omitempty"`
+	Model              string `yaml:"model,omitempty"`
+	BaseURL            string `yaml:"base_url,omitempty"`
+	BackfillBatchSize  int    `yaml:"backfill_batch_size,omitempty"`
+	BackfillIntervalS  int    `yaml:"backfill_interval_seconds,omitempty"`
+}
+
+// PruneConfigBlock is the YAML shape that maps onto
+// memory/sqlite.PruneConfig. Stored as hours/seconds primitives so
+// hand-editing isn't confusing.
+type PruneConfigBlock struct {
+	WorkingMaxAgeHours       int     `yaml:"working_max_age_hours,omitempty"`
+	EpisodicMaxAgeHours      int     `yaml:"episodic_max_age_hours,omitempty"`
+	EpisodicImportanceCutoff float64 `yaml:"episodic_importance_cutoff,omitempty"`
+	AutoPruneIntervalMinutes int     `yaml:"auto_prune_interval_minutes,omitempty"`
 }
 
 // ServerConfig controls the HTTP listener. AuthToken is required only

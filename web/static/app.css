@@ -170,3 +170,28 @@ button.danger { background: #fde0e5; color: var(--err); border-color: #f1b0ba; }
   color: var(--muted);
   font-size: 0.7rem;
 }
+
+.memory-grid { display: grid; grid-template-columns: 1fr 260px; gap: 1rem; }
+.memory-main { min-width: 0; }
+.memory-sidebar h3 { margin-top: 0.75rem; margin-bottom: 0.25rem; font-size: 0.9rem; text-transform: uppercase; color: var(--muted); }
+.memory-sidebar .bar {
+  height: 8px; background: var(--line); border-radius: 4px; overflow: hidden; margin: 0.25rem 0;
+}
+.memory-sidebar .bar span { display: block; height: 100%; background: var(--accent); }
+.memory-search { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; margin-bottom: 1rem; }
+.memory-search input[type=text] { flex: 1; min-width: 200px; }
+.memory-list { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+.memory-list th, .memory-list td { padding: 0.4rem 0.5rem; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+.memory-list td.content { max-width: 480px; }
+.memory-list td.ts { font-family: var(--mono); color: var(--muted); white-space: nowrap; }
+.memory-list .kind {
+  display: inline-block; padding: 0.05rem 0.5rem; border-radius: 10px;
+  font-size: 0.7rem; background: var(--line); color: var(--muted);
+}
+.memory-list .kind-profile { background: #e3eaf3; color: #2b4f7a; }
+.memory-list .kind-episodic { background: #f1e8d7; color: #6a5512; }
+.memory-list .kind-working { background: #e3f3e0; color: var(--ok); }
+.memory-list .tags { margin-top: 0.25rem; }
+.memory-list .tag { display: inline-block; padding: 0 0.4rem; border-radius: 3px; background: var(--line); color: var(--muted); font-size: 0.7rem; margin-right: 0.25rem; }
+button.small { padding: 0.15rem 0.5rem; font-size: 0.75rem; }
+.memory-pagination { margin-top: 1rem; display: flex; gap: 1rem; }
