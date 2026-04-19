@@ -38,6 +38,40 @@
   {{end}}
 
   <section class="card">
+    <header><h2>MCP Servers</h2></header>
+    <p class="help">Connect to Model Context Protocol servers to expose their tools to the chat.</p>
+
+    {{range .Data.MCPServers}}
+    <div class="mcp-row">
+      <label>Name<input name="mcp_name_{{.Index}}" value="{{.Name}}" placeholder="server-name"></label>
+      <label>Transport
+        <select name="mcp_transport_{{.Index}}">
+          <option value="stdio" {{if eq .Transport "stdio"}}selected{{end}}>stdio</option>
+          <option value="http" {{if eq .Transport "http"}}selected{{end}}>http</option>
+        </select>
+      </label>
+      <label>Command (stdio) or URL (http)
+        <input name="mcp_command_{{.Index}}" value="{{if eq .Transport "http"}}{{.URL}}{{else}}{{.Command}}{{end}}"
+               placeholder='npx -y @upstream/foo   OR   http://localhost:8080/mcp'>
+      </label>
+      <label>Prefix (optional)<input name="mcp_prefix_{{.Index}}" value="{{.Prefix}}" placeholder="defaults to name"></label>
+      <label class="toggle"><input type="checkbox" name="mcp_enabled_{{.Index}}" {{if .Enabled}}checked{{end}}><span>Enabled</span></label>
+      <div class="mcp-actions">
+        <button type="button"
+                hx-post="/config/mcp/test"
+                hx-target="#mcp-test-{{.Index}}"
+                hx-include="[name='mcp_name_{{.Index}}'],[name='mcp_transport_{{.Index}}'],[name='mcp_command_{{.Index}}'],[name='mcp_prefix_{{.Index}}']"
+                >Test</button>
+        <span id="mcp-test-{{.Index}}"></span>
+        <button type="submit" name="mcp_delete" value="{{.Index}}" class="danger">Remove</button>
+      </div>
+    </div>
+    {{end}}
+
+    <button type="submit" name="mcp_add" value="1">Add server</button>
+  </section>
+
+  <section class="card">
     <header><h2>Budget</h2></header>
     <label>Ceiling (USD; 0 = unlimited)
       <input type="number" step="0.01" min="0" name="budget_ceiling_usd" value="{{.Data.Budget.CeilingUSD}}">

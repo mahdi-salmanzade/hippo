@@ -15,6 +15,7 @@ import (
 type chatPageData struct {
 	Providers []chatProviderView
 	Tasks     []string
+	ToolCount int
 }
 
 type chatProviderView struct {
@@ -39,12 +40,19 @@ func (s *Server) handleChatGet(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 	tasks := []string{"classify", "reason", "generate", "protect"}
+	toolCount := 0
+	if b := s.Bundle(); b != nil {
+		for _, c := range b.MCPClients {
+			toolCount += len(c.Tools())
+		}
+	}
 	s.render(w, "chat.html", pageData{
 		Title:  "Chat",
 		Active: "chat",
 		Data: chatPageData{
 			Providers: provs,
 			Tasks:     tasks,
+			ToolCount: toolCount,
 		},
 	})
 }

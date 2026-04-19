@@ -1,13 +1,17 @@
 package web
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"log/slog"
+	"net/http"
 	"sort"
+	"time"
 
 	"github.com/mahdi-salmanzade/hippo"
 	"github.com/mahdi-salmanzade/hippo/budget"
+	"github.com/mahdi-salmanzade/hippo/mcp"
 	"github.com/mahdi-salmanzade/hippo/memory/sqlite"
 	"github.com/mahdi-salmanzade/hippo/providers/anthropic"
 	"github.com/mahdi-salmanzade/hippo/providers/ollama"
@@ -19,11 +23,12 @@ import (
 // Config so the server can swap it atomically after a config edit and
 // close the previous bundle's owned resources on shutdown.
 type BrainBundle struct {
-	Brain    *hippo.Brain
-	Memory   hippo.Memory
-	Budget   hippo.BudgetTracker
-	Router   hippo.Router
-	Warnings []string
+	Brain      *hippo.Brain
+	Memory     hippo.Memory
+	Budget     hippo.BudgetTracker
+	Router     hippo.Router
+	MCPClients []*mcp.Client
+	Warnings   []string
 }
 
 // Close releases resources owned by the bundle. Safe to call on a nil
@@ -33,6 +38,11 @@ func (b *BrainBundle) Close() error {
 		return nil
 	}
 	var errs []error
+	for _, c := range b.MCPClients {
+		if err := c.Close(); err != nil {
+			errs = append(errs, err)
+		}
+	}
 	if b.Memory != nil {
 		if err := b.Memory.Close(); err != nil {
 			errs = append(errs, err)
@@ -135,12 +145,96 @@ func BuildBrain(cfg *Config, logger *slog.Logger) (*BrainBundle, error) {
 	bundle.Router = router
 	opts = append(opts, hippo.WithRouter(router))
 
+	// MCP clients. Each enabled server gets 10s to complete the
+	// initialize handshake; servers that exceed the budget, fail to
+	// spawn, or reject the handshake are logged+skipped so one dead
+	// stdio binary can't block hippo serve.
+	mcpClients, mcpWarns := connectMCPServers(cfg.MCP.Servers, logger)
+	bundle.MCPClients = mcpClients
+	bundle.Warnings = append(bundle.Warnings, mcpWarns...)
+	if len(mcpClients) > 0 {
+		sources := make([]hippo.MCPToolSource, 0, len(mcpClients))
+		for _, c := range mcpClients {
+			sources = append(sources, c)
+		}
+		opts = append(opts, hippo.WithMCPClients(sources...))
+	}
+
 	brain, err := hippo.New(opts...)
 	if err != nil {
+		// Tear down any MCP clients we opened — hippo.New's own
+		// collision check is the typical failure mode, and leaving
+		// subprocesses running would leak across bundle rebuilds.
+		for _, c := range mcpClients {
+			_ = c.Close()
+		}
+		bundle.MCPClients = nil
 		return nil, fmt.Errorf("web: build brain: %w", err)
 	}
 	bundle.Brain = brain
 	return bundle, nil
+}
+
+// mcpConnectTimeout bounds the per-server handshake at bundle
+// construction time. Servers that take longer are skipped with a
+// warning; the Client's own reconnect loop continues in the
+// background and will recover once they become reachable.
+const mcpConnectTimeout = 10 * time.Second
+
+// connectMCPServers launches one mcp.Client per enabled entry,
+// returning the live clients plus a warning string for every
+// skipped or failed server.
+func connectMCPServers(servers []MCPServerConfig, logger *slog.Logger) ([]*mcp.Client, []string) {
+	var clients []*mcp.Client
+	var warns []string
+	for _, s := range servers {
+		if !s.Enabled {
+			continue
+		}
+		prefix := s.Prefix
+		if prefix == "" {
+			prefix = s.Name
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), mcpConnectTimeout)
+		var (
+			c   *mcp.Client
+			err error
+		)
+		switch s.Transport {
+		case "stdio":
+			c, err = mcp.Connect(ctx, s.Command,
+				mcp.WithPrefix(prefix),
+				mcp.WithLogger(logger),
+			)
+		case "http":
+			c, err = mcp.ConnectHTTPWithHeaders(ctx, s.URL, headersFromMap(s.Headers),
+				mcp.WithPrefix(prefix),
+				mcp.WithLogger(logger),
+			)
+		default:
+			err = fmt.Errorf("unsupported transport %q", s.Transport)
+		}
+		cancel()
+		if err != nil {
+			msg := fmt.Sprintf("mcp %q: %v", s.Name, err)
+			logger.Warn("mcp: connect failed; skipping", "server", s.Name, "err", err)
+			warns = append(warns, msg)
+			continue
+		}
+		clients = append(clients, c)
+	}
+	return clients, warns
+}
+
+// headersFromMap converts the config's plain map into http.Header.
+// A nil map yields an empty header (not nil) so downstream code can
+// always Clone without a nil check.
+func headersFromMap(m map[string]string) http.Header {
+	h := http.Header{}
+	for k, v := range m {
+		h.Set(k, v)
+	}
+	return h
 }
 
 // constructProvider builds one hippo.Provider from a (name, pc) pair.

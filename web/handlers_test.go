@@ -18,6 +18,19 @@ import (
 	"github.com/mahdi-salmanzade/hippo"
 )
 
+// fakeForm builds an *http.Request with the given fields set in
+// r.Form for tests that exercise form parsing directly.
+func fakeForm(fields map[string]string) *http.Request {
+	values := url.Values{}
+	for k, v := range fields {
+		values.Set(k, v)
+	}
+	req := httptest.NewRequest("POST", "/", strings.NewReader(values.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	_ = req.ParseForm()
+	return req
+}
+
 // freshServer builds a Server wired to a throw-away config file. Used
 // by handler tests — the server isn't actually Start'd because the
 // tests exercise the mux directly via httptest.

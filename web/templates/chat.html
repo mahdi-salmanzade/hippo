@@ -27,7 +27,7 @@
       </select>
     </label>
     <label class="toggle"><input type="checkbox" id="memory"><span>Memory</span></label>
-    <label class="toggle"><input type="checkbox" id="tools"><span>Tools</span></label>
+    <label class="toggle"><input type="checkbox" id="tools"><span>Tools{{if .Data.ToolCount}} <span class="badge">{{.Data.ToolCount}} available</span>{{end}}</span></label>
   </div>
 
   <div class="messages" id="messages"></div>

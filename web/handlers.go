@@ -7,6 +7,7 @@ import (
 	"html/template"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/mahdi-salmanzade/hippo/budget"
 )
@@ -78,10 +79,24 @@ func (s *Server) handleHome(w http.ResponseWriter, r *http.Request) {
 
 // configPageData is what config.html expects.
 type configPageData struct {
-	Providers []configProviderView
-	Budget    BudgetConfig
-	Memory    MemoryConfig
-	Policy    string
+	Providers  []configProviderView
+	Budget     BudgetConfig
+	Memory     MemoryConfig
+	Policy     string
+	MCPServers []MCPServerView
+}
+
+// MCPServerView is the template-facing shape of one MCP server row.
+// Command is rendered as a space-joined string; the form handler
+// re-splits on whitespace when saving.
+type MCPServerView struct {
+	Index     int
+	Name      string
+	Transport string
+	Command   string
+	URL       string
+	Prefix    string
+	Enabled   bool
 }
 
 type configProviderView struct {
@@ -142,11 +157,25 @@ func (s *Server) buildConfigView() configPageData {
 			NeedsAPIKey:  name != "ollama",
 		})
 	}
+	mcpViews := make([]MCPServerView, len(cfg.MCP.Servers))
+	for i, s := range cfg.MCP.Servers {
+		mcpViews[i] = MCPServerView{
+			Index:     i,
+			Name:      s.Name,
+			Transport: s.Transport,
+			Command:   strings.Join(s.Command, " "),
+			URL:       s.URL,
+			Prefix:    s.Prefix,
+			Enabled:   s.Enabled,
+		}
+	}
+
 	return configPageData{
-		Providers: views,
-		Budget:    cfg.Budget,
-		Memory:    cfg.Memory,
-		Policy:    cfg.PolicyPath,
+		Providers:  views,
+		Budget:     cfg.Budget,
+		Memory:     cfg.Memory,
+		Policy:     cfg.PolicyPath,
+		MCPServers: mcpViews,
 	}
 }
 
@@ -218,6 +247,8 @@ func (s *Server) handleConfigPost(w http.ResponseWriter, r *http.Request) {
 	if v := r.FormValue("memory_db_path"); v != "" {
 		updated.Memory.DBPath = v
 	}
+
+	updated.MCP = parseMCPForm(r)
 
 	if err := updated.Validate(); err != nil {
 		writeFlash(w, "", err.Error())

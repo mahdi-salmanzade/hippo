@@ -22,6 +22,7 @@ func (s *Server) routes() *http.ServeMux {
 	mux.HandleFunc("GET /api/recent-calls", s.handleRecentCallsFragment)
 	mux.HandleFunc("GET /api/providers", s.handleProvidersJSON)
 	mux.HandleFunc("GET /api/models/{provider}", s.handleModelsJSON)
+	mux.HandleFunc("POST /config/mcp/test", s.handleMCPTest)
 	mux.HandleFunc("GET /login", s.handleLoginGet)
 	mux.HandleFunc("POST /login", s.handleLoginPost)
 	mux.HandleFunc("POST /logout", s.handleLogout)

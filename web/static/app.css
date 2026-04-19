@@ -147,3 +147,26 @@ table.recent-calls td.preview { color: var(--muted); max-width: 320px; overflow:
 .current-model { display: none; }
 
 .policy-form textarea { font-family: var(--mono); font-size: 0.85rem; min-height: 600px; }
+
+.mcp-row {
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 0.75rem;
+  margin-bottom: 0.75rem;
+  background: var(--bg);
+}
+.mcp-row label { margin: 0.25rem 0; }
+.mcp-actions { display: flex; gap: 0.5rem; align-items: center; margin-top: 0.5rem; }
+.mcp-actions .ok { color: var(--ok); font-size: 0.85rem; }
+.mcp-actions .err { color: var(--err); font-size: 0.85rem; }
+button.danger { background: #fde0e5; color: var(--err); border-color: #f1b0ba; }
+
+.badge {
+  display: inline-block;
+  margin-left: 0.25rem;
+  padding: 0.05rem 0.4rem;
+  border-radius: 10px;
+  background: var(--line);
+  color: var(--muted);
+  font-size: 0.7rem;
+}

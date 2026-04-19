@@ -31,10 +31,33 @@ type Config struct {
 	PolicyPath string                    `yaml:"policy_path"`
 	Memory     MemoryConfig              `yaml:"memory"`
 	Server     ServerConfig              `yaml:"server"`
+	MCP        MCPConfig                 `yaml:"mcp,omitempty"`
 
 	// path remembers where this Config was loaded from so Save can
 	// round-trip without the caller tracking it separately.
 	path string `yaml:"-"`
+}
+
+// MCPConfig holds the user-declared Model Context Protocol server
+// connections. Each entry is an MCPServerConfig.
+type MCPConfig struct {
+	Servers []MCPServerConfig `yaml:"servers,omitempty"`
+}
+
+// MCPServerConfig describes one MCP server. The Name doubles as the
+// human label and, when Prefix is empty and the entry was added via
+// the web UI, the default prefix applied to the server's tool names.
+// Library callers using mcp.Connect directly control Prefix via the
+// mcp package's WithPrefix option; this struct only feeds the web UI
+// path.
+type MCPServerConfig struct {
+	Name      string            `yaml:"name"`
+	Transport string            `yaml:"transport"`
+	Command   []string          `yaml:"command,omitempty"`
+	URL       string            `yaml:"url,omitempty"`
+	Headers   map[string]string `yaml:"headers,omitempty"`
+	Prefix    string            `yaml:"prefix,omitempty"`
+	Enabled   bool              `yaml:"enabled"`
 }
 
 // ProviderConfig is the per-provider settings block.
@@ -208,6 +231,26 @@ func (c *Config) Validate() error {
 		}
 		if p.DefaultModel == "" {
 			return fmt.Errorf("web: provider %q is enabled but default_model is empty", name)
+		}
+	}
+	for i, s := range c.MCP.Servers {
+		if !s.Enabled {
+			continue
+		}
+		if s.Name == "" {
+			return fmt.Errorf("web: MCP server #%d: name is empty", i)
+		}
+		switch s.Transport {
+		case "stdio":
+			if len(s.Command) == 0 {
+				return fmt.Errorf("web: MCP server %q: stdio transport requires a command", s.Name)
+			}
+		case "http":
+			if s.URL == "" {
+				return fmt.Errorf("web: MCP server %q: http transport requires a URL", s.Name)
+			}
+		default:
+			return fmt.Errorf("web: MCP server %q: unknown transport %q", s.Name, s.Transport)
 		}
 	}
 	return nil
