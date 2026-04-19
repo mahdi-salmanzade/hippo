@@ -21,6 +21,8 @@ import (
 	"io"
 	"log/slog"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/mahdi-salmanzade/hippo"
@@ -39,8 +41,23 @@ const (
 // because users only interact with it through the hippo.Memory
 // returned by Open.
 type store struct {
-	db     *sql.DB
-	logger *slog.Logger
+	db       *sql.DB
+	logger   *slog.Logger
+	embedder hippo.Embedder
+
+	// workers holds the stop functions of any background goroutines
+	// (backfill, auto-prune) started via StartBackfill / StartAutoPrune.
+	// Close stops them in reverse order before closing the DB.
+	workersMu sync.Mutex
+	workers   []func()
+
+	// Backfill status mirror — written by the backfill worker, read
+	// by BackfillStatus. The atomic flag lets the web UI poll without
+	// contending with the worker; the remaining fields use the mutex.
+	lastBackfillRunning atomic.Bool
+	backfillStatusMu    sync.Mutex
+	lastBackfillError   string
+	lastBackfillRunAt   time.Time
 }
 
 // Option configures a store during construction.
@@ -50,6 +67,7 @@ type config struct {
 	busyTimeout time.Duration
 	maxOpenConn int
 	logger      *slog.Logger
+	embedder    hippo.Embedder
 }
 
 // WithBusyTimeout overrides the default 5s SQLite busy_timeout PRAGMA.
@@ -71,6 +89,16 @@ func WithMaxOpenConns(n int) Option {
 // Defaults to a discard logger; store operations are not chatty.
 func WithLogger(l *slog.Logger) Option {
 	return func(c *config) { c.logger = l }
+}
+
+// WithEmbedder attaches an Embedder so Recall can score candidates on
+// vector similarity. Without one the store operates keyword-only and
+// MemoryQuery.Semantic is silently ignored.
+//
+// Safe to pass a nil Embedder (the option becomes a no-op); callers
+// that probe an environment for an embedder can keep the code simple.
+func WithEmbedder(e hippo.Embedder) Option {
+	return func(c *config) { c.embedder = e }
 }
 
 // Open creates or opens a SQLite-backed memory store at the given path.
@@ -127,61 +155,28 @@ func Open(path string, opts ...Option) (hippo.Memory, error) {
 		return nil, fmt.Errorf("memory/sqlite: ping: %w", err)
 	}
 
-	if err := applySchema(context.Background(), db); err != nil {
+	if err := migrate(context.Background(), db); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("memory/sqlite: schema: %w", err)
 	}
 
-	return &store{db: db, logger: cfg.logger}, nil
+	return &store{
+		db:       db,
+		logger:   cfg.logger,
+		embedder: cfg.embedder,
+	}, nil
 }
 
-// applySchema runs the create-if-not-exists statements in a single
-// transaction. Idempotent: running it against an already-initialised
-// database is a no-op.
-func applySchema(ctx context.Context, db *sql.DB) error {
-	const ddl = `
-CREATE TABLE IF NOT EXISTS memories (
-    id         TEXT PRIMARY KEY,
-    kind       TEXT NOT NULL,
-    timestamp  INTEGER NOT NULL,
-    content    TEXT NOT NULL,
-    importance REAL NOT NULL DEFAULT 0.5,
-    metadata   TEXT NOT NULL DEFAULT '{}',
-    created_at INTEGER NOT NULL
-) STRICT;
+// Embedder returns the embedder passed to Open, or nil when the store
+// is keyword-only. Internal callers (Brain.New's backfill wiring)
+// inspect this to decide whether to start the backfill worker.
+func (s *store) Embedder() hippo.Embedder { return s.embedder }
 
-CREATE INDEX IF NOT EXISTS idx_memories_kind_timestamp ON memories(kind, timestamp DESC);
-CREATE INDEX IF NOT EXISTS idx_memories_importance ON memories(importance DESC);
-
-CREATE TABLE IF NOT EXISTS tags (
-    memory_id TEXT NOT NULL REFERENCES memories(id) ON DELETE CASCADE,
-    tag       TEXT NOT NULL,
-    PRIMARY KEY (memory_id, tag)
-) STRICT;
-
-CREATE INDEX IF NOT EXISTS idx_tags_tag ON tags(tag);
-
-CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts USING fts5(
-    content,
-    content=memories,
-    content_rowid=rowid,
-    tokenize='porter unicode61'
-);
-
-CREATE TRIGGER IF NOT EXISTS memories_ai AFTER INSERT ON memories BEGIN
-    INSERT INTO memories_fts(rowid, content) VALUES (new.rowid, new.content);
-END;
-CREATE TRIGGER IF NOT EXISTS memories_ad AFTER DELETE ON memories BEGIN
-    INSERT INTO memories_fts(memories_fts, rowid, content) VALUES ('delete', old.rowid, old.content);
-END;
-CREATE TRIGGER IF NOT EXISTS memories_au AFTER UPDATE ON memories BEGIN
-    INSERT INTO memories_fts(memories_fts, rowid, content) VALUES ('delete', old.rowid, old.content);
-    INSERT INTO memories_fts(rowid, content) VALUES (new.rowid, new.content);
-END;
-`
-	_, err := db.ExecContext(ctx, ddl)
-	return err
-}
+// DB exposes the underlying *sql.DB for operations that need to issue
+// custom SQL (the backfill worker, the web UI's stats query).
+// Unexported consumers within the hippo tree; external callers should
+// stick to the hippo.Memory interface.
+func (s *store) DB() *sql.DB { return s.db }
 
 // Add persists a record. See hippo.Memory.
 //
@@ -232,9 +227,23 @@ func (s *store) Add(ctx context.Context, rec *hippo.Record) error {
 	}
 	defer func() { _ = tx.Rollback() }()
 
+	var (
+		embBlob   any
+		embModel  any
+		embedded  any
+	)
+	if len(rec.Embedding) > 0 {
+		embBlob = encodeEmbedding(rec.Embedding)
+		if s.embedder != nil {
+			embModel = s.embedder.Name()
+		}
+		embedded = time.Now().UnixNano()
+	}
+
 	_, err = tx.ExecContext(ctx, `
-		INSERT INTO memories (id, kind, timestamp, content, importance, metadata, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		INSERT INTO memories (id, kind, timestamp, content, importance, metadata, created_at,
+		                     embedding, embedding_model, embedded_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		rec.ID,
 		string(rec.Kind),
 		rec.Timestamp.UnixNano(),
@@ -242,6 +251,9 @@ func (s *store) Add(ctx context.Context, rec *hippo.Record) error {
 		rec.Importance,
 		"{}",
 		time.Now().UnixNano(),
+		embBlob,
+		embModel,
+		embedded,
 	)
 	if err != nil {
 		return fmt.Errorf("memory/sqlite: insert memory: %w", err)
@@ -316,115 +328,68 @@ func newULID() (string, error) {
 // defaultRecallLimit is used when hippo.MemoryQuery.Limit is zero.
 const defaultRecallLimit = 10
 
-// Recall returns records matching the MemoryQuery filters, ordered by
-// FTS5 bm25 relevance when query is non-empty or by timestamp DESC
-// otherwise. See hippo.Memory.
+// Recall returns records matching q. The retrieval mode is chosen
+// from the interaction of (query string, q.Semantic, embedder wired
+// up on the store):
 //
-// Filters compose with AND. Tags match is "at least one of" — a
-// record with tag "billing" matches a query with Tags=["billing",
-// "refactor"].
+//   - query + Semantic + embedder  → hybrid (keyword + vector blend)
+//   - Semantic alone + embedder    → semantic-only on query text
+//   - query + (no Semantic or no embedder) → keyword-only (FTS5 bm25)
+//   - empty query                  → recency
+//
+// Filters (Kinds, Tags, Since/Until, MinImportance) compose with AND
+// in every mode. MinImportance runs against effective (decayed)
+// importance rather than the raw field so old records fade
+// automatically.
 func (s *store) Recall(ctx context.Context, query string, q hippo.MemoryQuery) ([]hippo.Record, error) {
-	limit := q.Limit
-	if limit <= 0 {
-		limit = defaultRecallLimit
-	}
+	trimmed := strings.TrimSpace(query)
+	hasEmbedder := s.embedder != nil
+	wantSemantic := q.Semantic && hasEmbedder
 
 	var (
-		sb   strings.Builder
-		args []any
+		records []hippo.Record
+		err     error
 	)
-
-	// Base columns and FROM clause. When the caller supplied a text
-	// query we JOIN the FTS5 virtual table and rank by bm25; when
-	// empty we skip the JOIN entirely and fall back to recency order.
-	textSearch := strings.TrimSpace(query) != ""
-	if textSearch {
-		sb.WriteString(`
-			SELECT m.id, m.kind, m.timestamp, m.content, m.importance
-			FROM memories m
-			JOIN memories_fts fts ON fts.rowid = m.rowid
-			WHERE memories_fts MATCH ?`)
-		args = append(args, buildFTSQuery(query))
-	} else {
-		sb.WriteString(`
-			SELECT m.id, m.kind, m.timestamp, m.content, m.importance
-			FROM memories m
-			WHERE 1=1`)
+	switch {
+	case wantSemantic && trimmed != "":
+		records, err = s.recallHybrid(ctx, trimmed, q)
+	case wantSemantic:
+		// Semantic requested without a text to embed — fall back to
+		// recency ordered by decayed importance. Still honours filters.
+		records, err = s.recallRecency(ctx, q)
+	case trimmed != "":
+		records, err = s.recallKeyword(ctx, trimmed, q, effectiveLimit(q))
+	default:
+		records, err = s.recallRecency(ctx, q)
 	}
-
-	if len(q.Kinds) > 0 {
-		sb.WriteString(" AND m.kind IN (")
-		for i, k := range q.Kinds {
-			if i > 0 {
-				sb.WriteByte(',')
-			}
-			sb.WriteByte('?')
-			args = append(args, string(k))
-		}
-		sb.WriteByte(')')
-	}
-
-	if len(q.Tags) > 0 {
-		sb.WriteString(" AND m.id IN (SELECT memory_id FROM tags WHERE tag IN (")
-		for i, t := range q.Tags {
-			if i > 0 {
-				sb.WriteByte(',')
-			}
-			sb.WriteByte('?')
-			args = append(args, t)
-		}
-		sb.WriteString("))")
-	}
-
-	if !q.Since.IsZero() {
-		sb.WriteString(" AND m.timestamp >= ?")
-		args = append(args, q.Since.UnixNano())
-	}
-	if !q.Until.IsZero() {
-		sb.WriteString(" AND m.timestamp <= ?")
-		args = append(args, q.Until.UnixNano())
-	}
-	if q.MinImportance > 0 {
-		sb.WriteString(" AND m.importance >= ?")
-		args = append(args, q.MinImportance)
-	}
-
-	if textSearch {
-		sb.WriteString(" ORDER BY bm25(memories_fts)")
-	} else {
-		sb.WriteString(" ORDER BY m.timestamp DESC")
-	}
-	sb.WriteString(" LIMIT ?")
-	args = append(args, limit)
-
-	rows, err := s.db.QueryContext(ctx, sb.String(), args...)
 	if err != nil {
-		return nil, fmt.Errorf("memory/sqlite: recall query: %w", err)
+		return nil, err
 	}
-	defer rows.Close()
-
-	var records []hippo.Record
-	for rows.Next() {
-		var (
-			rec    hippo.Record
-			kind   string
-			tsNano int64
-		)
-		if err := rows.Scan(&rec.ID, &kind, &tsNano, &rec.Content, &rec.Importance); err != nil {
-			return nil, fmt.Errorf("memory/sqlite: recall scan: %w", err)
-		}
-		rec.Kind = hippo.MemoryKind(kind)
-		rec.Timestamp = time.Unix(0, tsNano)
-		records = append(records, rec)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("memory/sqlite: recall iter: %w", err)
-	}
-
 	if err := s.loadTags(ctx, records); err != nil {
 		return nil, err
 	}
+	if len(records) > 0 {
+		s.markAccessed(ctx, recordIDs(records))
+	}
 	return records, nil
+}
+
+// effectiveLimit returns the requested limit or the default.
+func effectiveLimit(q hippo.MemoryQuery) int {
+	if q.Limit > 0 {
+		return q.Limit
+	}
+	return defaultRecallLimit
+}
+
+// recordIDs extracts IDs for follow-up queries (tag loading, last_accessed
+// bookkeeping). Linear scan; the slice is always small.
+func recordIDs(records []hippo.Record) []string {
+	out := make([]string, len(records))
+	for i, r := range records {
+		out[i] = r.ID
+	}
+	return out
 }
 
 // loadTags populates the Tags field of each record by issuing a single
@@ -512,9 +477,36 @@ func (s *store) Prune(ctx context.Context, before time.Time) error {
 	return nil
 }
 
-// Close closes the underlying *sql.DB. Safe to call more than once.
+// DeleteByID removes one record and its tag rows. The FTS5 trigger
+// cleans up the search-index entry automatically, and the tag table's
+// ON DELETE CASCADE handles the join table. Missing IDs return nil —
+// the caller's view is "the row isn't here" either way.
+func (s *store) DeleteByID(ctx context.Context, id string) error {
+	if id == "" {
+		return errors.New("memory/sqlite: DeleteByID: empty id")
+	}
+	_, err := s.db.ExecContext(ctx, `DELETE FROM memories WHERE id = ?`, id)
+	if err != nil {
+		return fmt.Errorf("memory/sqlite: delete %s: %w", id, err)
+	}
+	return nil
+}
+
+// Close stops any registered background workers (backfill, auto-prune)
+// in reverse registration order and then closes the underlying *sql.DB.
+// Safe to call more than once.
 func (s *store) Close() error {
-	if s == nil || s.db == nil {
+	if s == nil {
+		return nil
+	}
+	s.workersMu.Lock()
+	workers := s.workers
+	s.workers = nil
+	s.workersMu.Unlock()
+	for i := len(workers) - 1; i >= 0; i-- {
+		workers[i]()
+	}
+	if s.db == nil {
 		return nil
 	}
 	err := s.db.Close()
