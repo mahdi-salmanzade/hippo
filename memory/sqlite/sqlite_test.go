@@ -268,12 +268,15 @@ func TestRecallEmptyQueryReturnsByRecency(t *testing.T) {
 func TestRecallCombinesFilters(t *testing.T) {
 	mem := openMem(t)
 	ctx := context.Background()
-	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	// Anchor on time.Now() so the decay formula from Pass 11 doesn't
+	// age-out every record: with Working half-life of 24h, absolute-
+	// date timestamps from months ago would fall below MinImportance.
+	base := time.Now()
 	for _, r := range []hippo.Record{
 		{Kind: hippo.MemoryWorking, Content: "billing wip", Tags: []string{"wip"}, Timestamp: base.Add(-1 * time.Hour), Importance: 0.9},
 		{Kind: hippo.MemoryEpisodic, Content: "billing wip", Tags: []string{"wip"}, Timestamp: base.Add(-1 * time.Hour), Importance: 0.9}, // wrong kind
 		{Kind: hippo.MemoryWorking, Content: "billing wip", Tags: []string{"other"}, Timestamp: base.Add(-1 * time.Hour), Importance: 0.9},  // wrong tag
-		{Kind: hippo.MemoryWorking, Content: "billing wip", Tags: []string{"wip"}, Timestamp: base.Add(-48 * time.Hour), Importance: 0.9}, // too old
+		{Kind: hippo.MemoryWorking, Content: "billing wip", Tags: []string{"wip"}, Timestamp: base.Add(-48 * time.Hour), Importance: 0.9}, // too old via Since
 		{Kind: hippo.MemoryWorking, Content: "billing wip", Tags: []string{"wip"}, Timestamp: base.Add(-1 * time.Hour), Importance: 0.2},  // low importance
 	} {
 		rec := r
