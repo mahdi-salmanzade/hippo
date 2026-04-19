@@ -47,6 +47,32 @@ type Provider interface {
 	Stream(ctx context.Context, c Call) (<-chan StreamChunk, error)
 }
 
+// Embedder produces vector embeddings for text. Implementations are
+// typically local models (Ollama's nomic-embed-text, mxbai-embed-large)
+// but cloud embedders could implement this too. hippo uses the returned
+// vectors for semantic memory retrieval; callers that want to use a
+// Brain without semantic memory never need to construct one.
+//
+// All implementations must be safe for concurrent use — backfill and
+// on-demand recall embedding may call the same Embedder from different
+// goroutines.
+type Embedder interface {
+	// Name identifies the embedder so a memory store can detect when
+	// the embedding model has changed and flag records for re-embedding
+	// (e.g. "ollama:nomic-embed-text").
+	Name() string
+	// Dimensions reports the fixed vector length this embedder
+	// produces. Zero is acceptable for embedders that derive the
+	// dimensionality lazily from the first successful call; callers
+	// should not assume Dimensions is available before Embed succeeds
+	// once.
+	Dimensions() int
+	// Embed returns one vector per input text, in the same order.
+	// Implementations may batch server-side for efficiency, but the
+	// returned shape is always len(texts) outer × Dimensions inner.
+	Embed(ctx context.Context, texts []string) ([][]float32, error)
+}
+
 // Memory is the persistence contract for hippo's memory layer.
 //
 // Implementations live in hippo/memory/<backend>. Backends must be safe

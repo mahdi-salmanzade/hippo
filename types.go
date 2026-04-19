@@ -357,7 +357,28 @@ type MemoryQuery struct {
 	// default (typically 10).
 	Limit int
 	// MinImportance filters out records below this importance score.
+	// Backends that implement decay apply it before the comparison so
+	// the threshold runs against effective importance, not base.
 	MinImportance float64
+
+	// Semantic requests embedding-based retrieval. When the backend has
+	// an Embedder configured, Recall compares each candidate's stored
+	// embedding against the embedded query text. Without an Embedder
+	// the flag is silently ignored — callers are expected to get
+	// degraded results, not an error.
+	Semantic bool
+	// HybridWeight blends keyword and semantic scores when both a query
+	// string and Semantic are set. 0.0 = pure keyword, 1.0 = pure
+	// semantic. Zero value defaults to 0.6 in the backend (biased
+	// toward semantic — keyword exactness still wins on high BM25
+	// matches).
+	HybridWeight float64
+	// TemporalExpansion, when non-zero, pulls records within ±duration
+	// of each semantic hit's timestamp into the result set at a reduced
+	// score. Implements the "nucleus retrieval" pattern from
+	// MemMachine; a typical value is one hour for conversational
+	// contexts.
+	TemporalExpansion time.Duration
 }
 
 // Decision is the Router's response: which provider to call, which model
