@@ -433,11 +433,19 @@ func (s *store) loadTags(ctx context.Context, records []hippo.Record) error {
 }
 
 // buildFTSQuery turns user-provided search text into an FTS5 query
-// string by treating each whitespace-separated token as an AND'd
-// phrase. Double quotes inside tokens are escaped by doubling, which
-// is FTS5's quoting rule. This keeps us safe from FTS5 operator
-// injection (NOT, OR, NEAR, column filters) without sacrificing the
-// natural "multi-word keyword search" UX.
+// string. Each whitespace-separated token is wrapped as a phrase
+// (double quotes escaped by doubling per FTS5 quoting rules) and the
+// phrases are OR-joined so multi-word queries recall any matching
+// token rather than requiring every one — bm25() still ranks the
+// overlapping matches above partial ones, so "the best hit wins"
+// holds. The quoting also sanitises FTS5 operators (NOT, NEAR, column
+// filters) so user input can't reshape the query.
+//
+// Pass 11 change from Pass 2: Pass 2 used implicit-AND (" "). With
+// semantic recall now carrying the "must match exactly" workload,
+// keyword's role shifts to "find anything relevant"; OR-semantics
+// matches that posture and matches what most search UIs do by
+// default.
 func buildFTSQuery(query string) string {
 	fields := strings.Fields(query)
 	if len(fields) == 0 {
@@ -447,7 +455,7 @@ func buildFTSQuery(query string) string {
 	for _, f := range fields {
 		parts = append(parts, `"`+strings.ReplaceAll(f, `"`, `""`)+`"`)
 	}
-	return strings.Join(parts, " ")
+	return strings.Join(parts, " OR ")
 }
 
 // Prune deletes working-memory records older than before. See

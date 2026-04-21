@@ -102,8 +102,8 @@ func main() {
 		text string
 		note string
 	}{
-		{"kubernetes upgrade timeline", "exact-ish phrase — keyword should do well"},
-		{"feline companions", "'cats' is the training corpus; semantic should win"},
+		{"kubernetes upgrade timeline", "multi-word — keyword OR-matches 'kubernetes' and 'upgrade'"},
+		{"feline companions", "semantic-only win — no token overlap with 'cats'/'kittens'"},
 		{"invoice processing", "billing adjacency — hybrid + temporal expansion shine"},
 	}
 
