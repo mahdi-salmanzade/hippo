@@ -50,25 +50,32 @@ type spendTool struct {
 
 func (t *spendTool) Name() string { return "hippo_spend" }
 func (t *spendTool) Description() string {
-	return "Returns the user's current LLM spend summary: total USD across the " +
-		"in-memory recent-calls buffer (last 100 calls), call count, breakdowns " +
-		"by provider/task/model, and daily budget status (ceiling, spent, " +
-		"remaining). Use this whenever the user asks about cost, spend, " +
-		"budget, or how much they've used. Data is local — nothing leaves " +
-		"the user's machine. Note: the snapshot reflects completed turns " +
-		"only; the current tool-calling turn isn't in the buffer yet, so " +
-		"a first-ever call may report zero."
+	return "Returns the user's LLM spend summary. Fields:\n" +
+		"- completed_usd, completed_calls: totals over finished turns\n" +
+		"- pending_calls: turns currently in flight (including this one)\n" +
+		"- by_provider, by_task, by_model: breakdowns across completed turns\n" +
+		"- budget.spent_usd / budget.remaining_usd: daily budget status\n" +
+		"Use this whenever the user asks about cost, spend, budget, or how " +
+		"much they've used. Data is local — nothing leaves the user's machine. " +
+		"When pending_calls > 0, tell the user how many turns are still " +
+		"completing and that their cost will be reflected once they finish — " +
+		"don't pretend the pending turns have zero cost."
 }
 func (t *spendTool) Schema() json.RawMessage {
 	return json.RawMessage(`{"type":"object","properties":{},"additionalProperties":false}`)
 }
 func (t *spendTool) Execute(ctx context.Context, args json.RawMessage) (hippo.ToolResult, error) {
+	// Split completed vs pending so the model can talk accurately
+	// about the current tool-calling turn instead of either
+	// undercounting (ignoring the pending row) or overcounting
+	// (treating a $0 placeholder as real spend).
 	out := map[string]any{
-		"total_usd":   t.state.TotalSpend(),
-		"call_count":  t.state.CallCount(),
-		"by_provider": t.state.SpendByProvider(),
-		"by_task":     t.state.SpendByTask(),
-		"by_model":    t.state.SpendByModel(),
+		"completed_usd":   t.state.TotalSpend(),
+		"completed_calls": t.state.CompletedCount(),
+		"pending_calls":   t.state.PendingCount(),
+		"by_provider":     t.state.SpendByProvider(),
+		"by_task":         t.state.SpendByTask(),
+		"by_model":        t.state.SpendByModel(),
 	}
 	if b := t.bundle(); b != nil && b.Budget != nil {
 		out["budget"] = map[string]any{

@@ -27,17 +27,45 @@ func TestSpendToolReturnsLocalState(t *testing.T) {
 	if err := json.Unmarshal([]byte(res.Content), &parsed); err != nil {
 		t.Fatalf("output not JSON: %v\n%s", err, res.Content)
 	}
-	if n, _ := parsed["call_count"].(float64); int(n) != 2 {
-		t.Errorf("call_count = %v; want 2", parsed["call_count"])
+	if n, _ := parsed["completed_calls"].(float64); int(n) != 2 {
+		t.Errorf("completed_calls = %v; want 2", parsed["completed_calls"])
 	}
-	if total, _ := parsed["total_usd"].(float64); total < 0.0020 || total > 0.0022 {
-		t.Errorf("total_usd = %v; want ~0.0021", parsed["total_usd"])
+	if n, _ := parsed["pending_calls"].(float64); int(n) != 0 {
+		t.Errorf("pending_calls = %v; want 0", parsed["pending_calls"])
+	}
+	if total, _ := parsed["completed_usd"].(float64); total < 0.0020 || total > 0.0022 {
+		t.Errorf("completed_usd = %v; want ~0.0021", parsed["completed_usd"])
 	}
 	// Provider / task / model arrays must all be present.
 	for _, k := range []string{"by_provider", "by_task", "by_model"} {
 		if _, ok := parsed[k]; !ok {
 			t.Errorf("missing key %q in tool output: %s", k, res.Content)
 		}
+	}
+}
+
+func TestSpendToolExposesPendingCalls(t *testing.T) {
+	state := NewState()
+	// One completed call, one placeholder mid-stream.
+	state.Record(CallRecord{Provider: "anthropic", Model: "claude-sonnet-4-6", Task: "generate", CostUSD: 0.005})
+	state.Record(CallRecord{Task: "generate", Pending: true})
+
+	tool := &spendTool{state: state, bundle: func() *BrainBundle { return nil }}
+	res, err := tool.Execute(context.Background(), json.RawMessage(`{}`))
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	var parsed map[string]any
+	_ = json.Unmarshal([]byte(res.Content), &parsed)
+
+	if n, _ := parsed["completed_calls"].(float64); int(n) != 1 {
+		t.Errorf("completed_calls = %v; want 1", parsed["completed_calls"])
+	}
+	if n, _ := parsed["pending_calls"].(float64); int(n) != 1 {
+		t.Errorf("pending_calls = %v; want 1 (tool must surface the in-flight turn)", parsed["pending_calls"])
+	}
+	if total, _ := parsed["completed_usd"].(float64); total < 0.0049 || total > 0.0051 {
+		t.Errorf("completed_usd = %v; want ~0.005 (pending row must not inflate totals)", parsed["completed_usd"])
 	}
 }
 

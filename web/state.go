@@ -220,11 +220,41 @@ func (s *State) SpendByModel() []ModelSpend {
 	return out
 }
 
-// CallCount returns the number of rows currently in the ring.
+// CallCount returns the number of rows currently in the ring, pending
+// placeholders included. Use CompletedCount when only finished turns
+// matter (e.g. the chat tool splits them explicitly).
 func (s *State) CallCount() int {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return len(s.recent)
+}
+
+// CompletedCount counts only non-pending records.
+func (s *State) CompletedCount() int {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	n := 0
+	for i := range s.recent {
+		if !s.recent[i].Pending {
+			n++
+		}
+	}
+	return n
+}
+
+// PendingCount counts placeholders that haven't received a usage
+// event yet — always ≤ 1 under normal single-user operation, but the
+// tool surfaces it so the model can explain the in-flight state.
+func (s *State) PendingCount() int {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	n := 0
+	for i := range s.recent {
+		if s.recent[i].Pending {
+			n++
+		}
+	}
+	return n
 }
 
 // ProviderSpend is one row of SpendByProvider.
