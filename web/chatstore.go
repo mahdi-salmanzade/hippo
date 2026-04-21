@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -31,6 +32,28 @@ import (
 // ctx so callers can cancel; none block long enough to need batching.
 type ChatStore struct {
 	db *sql.DB
+}
+
+// ChatTurnMeta captures the provider/model/cost/latency/token detail
+// the chat UI shows under each assistant bubble. Stored as JSON in the
+// metadata column so new fields can slot in without a migration.
+type ChatTurnMeta struct {
+	Provider     string  `json:"provider,omitempty"`
+	Model        string  `json:"model,omitempty"`
+	CostUSD      float64 `json:"cost_usd,omitempty"`
+	LatencyMS    int64   `json:"latency_ms,omitempty"`
+	InputTokens  int     `json:"input_tokens,omitempty"`
+	OutputTokens int     `json:"output_tokens,omitempty"`
+}
+
+// ChatMessageRow is the fully-hydrated shape returned by GetFull: one
+// saved turn plus its metadata and timestamp. The drawer renders
+// these; hippo.Call only needs Role+Content (see Get).
+type ChatMessageRow struct {
+	Role      string        `json:"role"`
+	Content   string        `json:"content"`
+	Meta      *ChatTurnMeta `json:"meta,omitempty"`
+	CreatedAt time.Time     `json:"created_at"`
 }
 
 // ChatSessionView is the drawer-facing shape: id, title, and the two
@@ -95,13 +118,25 @@ func (s *ChatStore) migrate(ctx context.Context) error {
 		role       TEXT NOT NULL,
 		content    TEXT NOT NULL,
 		created_at INTEGER NOT NULL,
+		metadata   TEXT NOT NULL DEFAULT '',
 		FOREIGN KEY(session_id) REFERENCES chat_sessions(id) ON DELETE CASCADE
 	);
 	CREATE INDEX IF NOT EXISTS idx_chat_messages_session ON chat_messages(session_id, id);
 	`
-	_, err := s.db.ExecContext(ctx, schema)
-	if err != nil {
+	if _, err := s.db.ExecContext(ctx, schema); err != nil {
 		return fmt.Errorf("web: chat store migrate: %w", err)
+	}
+	// Forward-compatible column add for stores created before the
+	// metadata column existed. ALTER TABLE ADD COLUMN is a no-op on
+	// fresh databases (column already present) — we swallow the
+	// "duplicate column" error to keep the path idempotent.
+	if _, err := s.db.ExecContext(ctx, `ALTER TABLE chat_messages ADD COLUMN metadata TEXT NOT NULL DEFAULT ''`); err != nil {
+		// modernc.org/sqlite reports this as "duplicate column name"
+		// in the error message; treat anything containing that
+		// substring as already-migrated. Any other error is real.
+		if !strings.Contains(err.Error(), "duplicate column") {
+			return fmt.Errorf("web: chat store migrate (alter): %w", err)
+		}
 	}
 	return nil
 }
@@ -135,12 +170,24 @@ func (s *ChatStore) Create(ctx context.Context) (string, error) {
 // title yet, the content is truncated to 60 chars and saved as the
 // title — a cheap heuristic that matches what users expect without a
 // second LLM round-trip.
-func (s *ChatStore) Append(ctx context.Context, sessionID, role, content string) error {
+//
+// meta is optional; pass nil for user turns or when you don't have
+// model/cost/latency data yet. The struct is JSON-serialised into the
+// metadata column so adding fields later doesn't need a migration.
+func (s *ChatStore) Append(ctx context.Context, sessionID, role, content string, meta *ChatTurnMeta) error {
 	if sessionID == "" {
 		return errors.New("web: chat store append: empty session id")
 	}
 	if role != "user" && role != "assistant" && role != "system" {
 		return fmt.Errorf("web: chat store append: invalid role %q", role)
+	}
+	metaJSON := ""
+	if meta != nil {
+		buf, err := json.Marshal(meta)
+		if err != nil {
+			return fmt.Errorf("web: chat store append: marshal meta: %w", err)
+		}
+		metaJSON = string(buf)
 	}
 	now := time.Now().Unix()
 	tx, err := s.db.BeginTx(ctx, nil)
@@ -163,8 +210,8 @@ func (s *ChatStore) Append(ctx context.Context, sessionID, role, content string)
 	}
 
 	if _, err := tx.ExecContext(ctx,
-		`INSERT INTO chat_messages (session_id, role, content, created_at) VALUES (?, ?, ?, ?)`,
-		sessionID, role, content, now); err != nil {
+		`INSERT INTO chat_messages (session_id, role, content, created_at, metadata) VALUES (?, ?, ?, ?, ?)`,
+		sessionID, role, content, now, metaJSON); err != nil {
 		return fmt.Errorf("web: chat store append insert: %w", err)
 	}
 
@@ -184,6 +231,37 @@ func (s *ChatStore) Append(ctx context.Context, sessionID, role, content string)
 		}
 	}
 	return tx.Commit()
+}
+
+// GetFull returns every saved turn with its metadata and timestamp.
+// The drawer uses this to rehydrate the meta line (model, cost,
+// latency) under each assistant bubble on load.
+func (s *ChatStore) GetFull(ctx context.Context, sessionID string) ([]ChatMessageRow, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT role, content, metadata, created_at
+		 FROM chat_messages WHERE session_id = ? ORDER BY id ASC`, sessionID)
+	if err != nil {
+		return nil, fmt.Errorf("web: chat store getfull: %w", err)
+	}
+	defer rows.Close()
+	var out []ChatMessageRow
+	for rows.Next() {
+		var r ChatMessageRow
+		var metaRaw string
+		var created int64
+		if err := rows.Scan(&r.Role, &r.Content, &metaRaw, &created); err != nil {
+			return nil, err
+		}
+		r.CreatedAt = time.Unix(created, 0)
+		if metaRaw != "" {
+			var m ChatTurnMeta
+			if err := json.Unmarshal([]byte(metaRaw), &m); err == nil && (m.Provider != "" || m.Model != "" || m.CostUSD != 0) {
+				r.Meta = &m
+			}
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
 }
 
 // Get returns the full transcript for a session in chronological

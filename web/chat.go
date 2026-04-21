@@ -151,7 +151,7 @@ func (s *Server) handleChatPost(w http.ResponseWriter, r *http.Request) {
 	// without persistence, just without drawer history.
 	chatID := strings.TrimSpace(r.FormValue("chat_id"))
 	if chatID != "" && s.chatStore != nil {
-		if err := s.chatStore.Append(r.Context(), chatID, "user", req.Prompt); err != nil {
+		if err := s.chatStore.Append(r.Context(), chatID, "user", req.Prompt, nil); err != nil {
 			s.logger.Warn("chat: persist user turn failed", "chat_id", chatID, "err", err)
 		}
 	}
@@ -209,11 +209,19 @@ func (s *Server) handleChatStream(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var fullText string
-	record := CallRecord{
+	// Insert a placeholder record now so the hippo_spend tool, firing
+	// mid-stream, counts this turn in its snapshot. The record gets
+	// patched with final usage/cost/model at usage-chunk arrival;
+	// mid-stream it shows as pending with CostUSD=0.
+	placeholder := CallRecord{
 		Timestamp: time.Now(),
 		Task:      string(sess.Call.Task),
 		Prompt:    sess.Call.Prompt,
+		Pending:   true,
 	}
+	recordID := s.state.Record(placeholder)
+	record := placeholder
+	record.ID = recordID
 
 	for chunk := range ch {
 		switch chunk.Type {
@@ -272,19 +280,32 @@ func (s *Server) handleChatStream(w http.ResponseWriter, r *http.Request) {
 
 	writeSSE(w, flusher, "done", "")
 	if record.Provider == "" && record.Error == "" {
-		// Stream closed without a usage chunk (cancelled). Don't
-		// record partial turns to keep the spend table honest.
+		// Stream closed without a usage chunk (cancelled). Drop the
+		// placeholder so the spend table stays honest — no half-
+		// finished turns clutter the UI.
+		s.state.RemoveByID(recordID)
 	} else {
-		s.state.Record(record)
+		record.Pending = false
+		s.state.UpdateByID(recordID, func(r *CallRecord) { *r = record })
 	}
 
 	// Persist the assistant turn if the client opted into drawer
 	// history. We write the accumulated text (no tool-call internals);
 	// that matches what the client transcript carries forward into the
-	// next turn. Errors here are logged, not fatal — the session is
-	// already closed.
+	// next turn. The meta struct carries model/cost/latency/tokens so
+	// the drawer can show the same info on reload that the live
+	// usage-event line showed during streaming. Errors here are
+	// logged, not fatal — the session is already closed.
 	if sess.ChatID != "" && s.chatStore != nil && fullText != "" {
-		if err := s.chatStore.Append(context.Background(), sess.ChatID, "assistant", fullText); err != nil {
+		meta := &ChatTurnMeta{
+			Provider:     record.Provider,
+			Model:        record.Model,
+			CostUSD:      record.CostUSD,
+			LatencyMS:    record.LatencyMS,
+			InputTokens:  record.Usage.InputTokens,
+			OutputTokens: record.Usage.OutputTokens,
+		}
+		if err := s.chatStore.Append(context.Background(), sess.ChatID, "assistant", fullText, meta); err != nil {
 			s.logger.Warn("chat: persist assistant turn failed", "chat_id", sess.ChatID, "err", err)
 		}
 	}

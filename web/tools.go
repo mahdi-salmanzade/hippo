@@ -55,7 +55,9 @@ func (t *spendTool) Description() string {
 		"by provider/task/model, and daily budget status (ceiling, spent, " +
 		"remaining). Use this whenever the user asks about cost, spend, " +
 		"budget, or how much they've used. Data is local — nothing leaves " +
-		"the user's machine."
+		"the user's machine. Note: the snapshot reflects completed turns " +
+		"only; the current tool-calling turn isn't in the buffer yet, so " +
+		"a first-ever call may report zero."
 }
 func (t *spendTool) Schema() json.RawMessage {
 	return json.RawMessage(`{"type":"object","properties":{},"additionalProperties":false}`)

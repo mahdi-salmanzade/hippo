@@ -639,14 +639,15 @@
       .then(function (r) { if (!r.ok) throw new Error("load failed"); return r.json(); })
       .then(function (data) {
         activeChatID = id;
-        transcript = (data.messages || []).map(function (m) {
-          return { role: m.role, content: m.content };
-        });
-        // Clear the view, then re-render every stored turn. We push
-        // transcript entries in lockstep with appendMsg via slice()
-        // instead of touching transcript so we don't double-count.
+        const rows = data.messages || [];
+        // Transcript for the next send — just role+content, no meta.
+        transcript = rows.map(function (m) { return { role: m.role, content: m.content }; });
+        // Clear the view, then re-render every stored turn, restoring
+        // the meta line under each assistant bubble from the server
+        // payload so reloaded conversations show the same model /
+        // cost / tokens / latency the live turn showed.
         msgs.innerHTML = "";
-        transcript.forEach(function (m) {
+        rows.forEach(function (m) {
           const pair = appendMsg(m.role, "");
           if (m.role === "assistant") {
             while (pair.body.firstChild) pair.body.removeChild(pair.body.firstChild);
@@ -654,12 +655,36 @@
           } else {
             pair.body.textContent = m.content;
           }
+          if (pair.meta) {
+            const parts = [];
+            if (m.meta) {
+              if (m.meta.provider && m.meta.model) parts.push(m.meta.provider + "/" + m.meta.model);
+              else if (m.meta.model) parts.push(m.meta.model);
+              const it = m.meta.input_tokens || 0, ot = m.meta.output_tokens || 0;
+              if (it || ot) parts.push(it + "→" + ot + " tok");
+              if (m.meta.cost_usd) parts.push("$" + Number(m.meta.cost_usd).toFixed(6));
+              if (m.meta.latency_ms) parts.push(m.meta.latency_ms + " ms");
+            }
+            if (m.created_at) parts.push(shortStamp(m.created_at));
+            if (parts.length) pair.meta.textContent = parts.join(" · ");
+          }
         });
         highlightActiveDrawerRow();
         closeDrawer();
         if (promptBox) promptBox.focus();
       })
       .catch(function (err) { setStatus("load error: " + err.message); });
+  }
+
+  // shortStamp formats an ISO timestamp as "Apr 21 · 12:34" — enough
+  // for the chat meta line without dominating it.
+  function shortStamp(iso) {
+    if (!iso) return "";
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return "";
+    const date = d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+    const time = d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+    return date + " · " + time;
   }
 
   function highlightActiveDrawerRow() {

@@ -42,18 +42,18 @@ func (s *Server) handleChatGetOne(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "id required", http.StatusBadRequest)
 		return
 	}
-	msgs, err := s.chatStore.Get(r.Context(), id)
+	rows, err := s.chatStore.GetFull(r.Context(), id)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	// Emit a stable JSON shape with lowercase keys so the drawer JS
-	// matches the in-memory transcript format.
-	out := make([]hippoMsgJSON, 0, len(msgs))
-	for _, m := range msgs {
-		out = append(out, hippoMsgJSON{Role: m.Role, Content: m.Content})
+	// Emit a stable JSON shape with lowercase keys — role, content,
+	// meta (nullable), created_at — matching what the drawer renders
+	// under each bubble on rehydrate.
+	if rows == nil {
+		rows = []ChatMessageRow{}
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"messages": out})
+	writeJSON(w, http.StatusOK, map[string]any{"messages": rows})
 }
 
 func (s *Server) handleChatCreate(w http.ResponseWriter, r *http.Request) {
@@ -108,14 +108,6 @@ func (s *Server) handleChatDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
-}
-
-// hippoMsgJSON is the wire shape for /api/chats/{id} responses. The
-// struct tags give the drawer a stable lowercase JSON contract so we
-// don't couple it to hippo.Message's default (title-cased) marshalling.
-type hippoMsgJSON struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
 }
 
 func writeJSON(w http.ResponseWriter, code int, v any) {

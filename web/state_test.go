@@ -25,6 +25,64 @@ func TestRecentCallsRingCapacity(t *testing.T) {
 	}
 }
 
+func TestPendingRecordCountedButUpdatable(t *testing.T) {
+	s := NewState()
+	id := s.Record(CallRecord{
+		Timestamp: time.Now(),
+		Task:      "generate",
+		Prompt:    "show me the spend",
+		Pending:   true,
+	})
+	if id == "" {
+		t.Fatal("Record did not return an id for an un-id'd placeholder")
+	}
+
+	// Mid-stream snapshot: the spend tool sees the pending turn in
+	// CallCount but not in totals (no provider/cost yet).
+	if got := s.CallCount(); got != 1 {
+		t.Errorf("CallCount = %d; want 1 (pending placeholder)", got)
+	}
+	if got := s.TotalSpend(); got != 0 {
+		t.Errorf("TotalSpend = %v; want 0 for pending", got)
+	}
+	// Recent() hides pending rows so the Recent Calls table doesn't
+	// render an empty-provider row.
+	if r := s.Recent(10); len(r) != 0 {
+		t.Errorf("Recent len = %d; want 0 (pending hidden)", len(r))
+	}
+
+	// Usage arrives: patch the record.
+	ok := s.UpdateByID(id, func(r *CallRecord) {
+		r.Provider = "anthropic"
+		r.Model = "claude-sonnet-4-6"
+		r.CostUSD = 0.001
+		r.Pending = false
+	})
+	if !ok {
+		t.Fatal("UpdateByID returned false on a still-live placeholder")
+	}
+	if got := s.TotalSpend(); got < 0.0009 || got > 0.0011 {
+		t.Errorf("TotalSpend after update = %v; want ~0.001", got)
+	}
+	if r := s.Recent(10); len(r) != 1 {
+		t.Errorf("Recent len after update = %d; want 1", len(r))
+	}
+}
+
+func TestRemoveByIDDropsCancelledPlaceholder(t *testing.T) {
+	s := NewState()
+	id := s.Record(CallRecord{Pending: true, Task: "generate"})
+	if got := s.CallCount(); got != 1 {
+		t.Fatalf("CallCount after record = %d; want 1", got)
+	}
+	if !s.RemoveByID(id) {
+		t.Fatal("RemoveByID returned false for a known id")
+	}
+	if got := s.CallCount(); got != 0 {
+		t.Errorf("CallCount after remove = %d; want 0", got)
+	}
+}
+
 func TestSpendAggregations(t *testing.T) {
 	s := NewState()
 	s.Record(CallRecord{Provider: "anthropic", Task: "reason", CostUSD: 0.10})
