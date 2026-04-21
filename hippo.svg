@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- hippo mark — the simplified nav-mark version of the mascot.
+     Cyan body, pink inner ears, dark ink outline. Scales cleanly from 16px
+     to 256px. For the full-character sticker, see hippo-logo.webp. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="hippo">
+  <title>hippo</title>
+  <!-- Ears -->
+  <ellipse cx="16" cy="17" rx="6" ry="7" fill="#1FA8C9" stroke="#1A1613" stroke-width="2"/>
+  <ellipse cx="48" cy="17" rx="6" ry="7" fill="#1FA8C9" stroke="#1A1613" stroke-width="2"/>
+  <ellipse cx="16" cy="18" rx="2.6" ry="3.4" fill="#F5B8B8"/>
+  <ellipse cx="48" cy="18" rx="2.6" ry="3.4" fill="#F5B8B8"/>
+  <!-- Head -->
+  <path d="M10 34 C10 22, 20 14, 32 14 C44 14, 54 22, 54 34 C54 44, 46 52, 32 52 C18 52, 10 44, 10 34 Z"
+        fill="#1FA8C9" stroke="#1A1613" stroke-width="2" stroke-linejoin="round"/>
+  <!-- Muzzle -->
+  <ellipse cx="32" cy="40" rx="16" ry="10" fill="#CFEAF1" stroke="#1A1613" stroke-width="2"/>
+  <!-- Nostrils -->
+  <ellipse cx="26" cy="38" rx="1.6" ry="2.2" fill="#1A1613" opacity="0.55"/>
+  <ellipse cx="38" cy="38" rx="1.6" ry="2.2" fill="#1A1613" opacity="0.55"/>
+  <!-- Smile -->
+  <path d="M28 44 Q32 47 36 44" fill="none" stroke="#1A1613" stroke-width="2" stroke-linecap="round"/>
+  <!-- Eyes -->
+  <circle cx="23" cy="27" r="3" fill="#1A1613"/>
+  <circle cx="41" cy="27" r="3" fill="#1A1613"/>
+  <circle cx="24" cy="26" r="0.9" fill="#FFF"/>
+  <circle cx="42" cy="26" r="0.9" fill="#FFF"/>
+</svg>

@@ -6,7 +6,7 @@
     <form method="get" action="/memory" class="memory-search-row">
       <label class="memory-searchbox">
         {{template "icon_search"}}
-        <input type="text" name="q" value="{{.Data.Query}}" placeholder="Search memory — content, tags, kinds…" autofocus>
+        <input type="text" name="q" value="{{.Data.Query}}" placeholder="Search memory - content, tags, kinds…" autofocus>
         <kbd>⌘K</kbd>
         <button class="submit" type="submit" aria-label="Search">{{template "icon_chev_r"}}</button>
       </label>
@@ -52,11 +52,9 @@
               <span class="num muted" style="margin-left:6px; font-size: 11px">{{printf "%.2f" .Importance}}</span>
             </td>
             <td class="content">
-              {{.Content}}
+              <span class="content-text">{{.Content}}</span>
               {{if .Tags}}
-              <div class="tags" style="margin-top: 6px">
-                {{range .Tags}}<span class="tag">{{.}}</span>{{end}}
-              </div>
+              <span class="tags-inline">{{range $i, $t := .Tags}}{{if $i}} · {{end}}{{$t}}{{end}}</span>
               {{end}}
             </td>
             <td class="row-actions">
@@ -76,7 +74,7 @@
       {{if .Data.HasNext}}<a href="?q={{.Data.Query}}&amp;mode={{.Data.Mode}}&amp;page={{add .Data.Page 1}}">next →</a>{{end}}
     </nav>
     {{else}}
-    <div class="card"><p class="muted">No records match — try a different query or mode.</p></div>
+    <div class="card"><p class="muted">No records match - try a different query or mode.</p></div>
     {{end}}
   </section>
 

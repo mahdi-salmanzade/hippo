@@ -50,25 +50,14 @@
 
   <div class="messages" id="messages">
     <div class="chat-empty" id="chat-empty">
-      <div class="mark">
-        <svg width="96" height="96" viewBox="0 0 64 64" aria-label="Hippo" role="img">
-          <ellipse cx="16" cy="17" rx="6" ry="7" fill="var(--hippo-cyan)" stroke="var(--hippo-ink)" stroke-width="2"/>
-          <ellipse cx="48" cy="17" rx="6" ry="7" fill="var(--hippo-cyan)" stroke="var(--hippo-ink)" stroke-width="2"/>
-          <ellipse cx="16" cy="18" rx="2.6" ry="3.4" fill="var(--hippo-pink)"/>
-          <ellipse cx="48" cy="18" rx="2.6" ry="3.4" fill="var(--hippo-pink)"/>
-          <path d="M10 34 C10 22, 20 14, 32 14 C44 14, 54 22, 54 34 C54 44, 46 52, 32 52 C18 52, 10 44, 10 34 Z"
-                fill="var(--hippo-cyan)" stroke="var(--hippo-ink)" stroke-width="2" stroke-linejoin="round"/>
-          <ellipse cx="32" cy="40" rx="16" ry="10" fill="var(--hippo-cyan-soft)" stroke="var(--hippo-ink)" stroke-width="2"/>
-          <ellipse cx="26" cy="38" rx="1.6" ry="2.2" fill="var(--hippo-ink)" opacity="0.55"/>
-          <ellipse cx="38" cy="38" rx="1.6" ry="2.2" fill="var(--hippo-ink)" opacity="0.55"/>
-          <path d="M28 44 Q32 47 36 44" fill="none" stroke="var(--hippo-ink)" stroke-width="2" stroke-linecap="round"/>
-          <circle cx="23" cy="27" r="3" fill="var(--hippo-ink)"/>
-          <circle cx="41" cy="27" r="3" fill="var(--hippo-ink)"/>
-        </svg>
-      </div>
+      <img class="mark" src="/static/hippo-mascot.webp" alt="Hippo" width="200" height="200" loading="eager">
       <div class="headline">Ask the hippo anything.</div>
       <div class="suggestions">
+        {{if .Data.HasEmbedder}}
         <button type="button" class="suggestion" data-suggestion="Summarize my last 10 memories">Summarize my last 10 memories</button>
+        {{else}}
+        <button type="button" class="suggestion" data-suggestion="What can you help me with?">What can you help me with?</button>
+        {{end}}
         <button type="button" class="suggestion" data-suggestion="Show today's spend">Show today's spend</button>
         <button type="button" class="suggestion" data-suggestion="Validate my policy">Validate my policy</button>
       </div>

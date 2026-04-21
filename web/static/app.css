@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════════════════════
-   HIPPO — warm, local-first, developer UI
+   HIPPO - warm, local-first, developer UI
    Design tokens + primitives + page styles.
    ═══════════════════════════════════════════════════════════ */
 
@@ -420,7 +420,10 @@ label.field > .label {
 .nav-tab.active::after {
   content: "";
   position: absolute;
-  left: 10px; right: 10px; bottom: -1px;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: -1px;
+  width: calc(100% - 20px);
   height: 2px;
   background: var(--hippo-rust);
   border-radius: 2px;
@@ -595,7 +598,12 @@ h1.page-title, .page-title {
   display: flex; flex-direction: column; align-items: center; justify-content: center;
   gap: 20px; padding: 40px 0;
 }
-.chat-empty .mark { opacity: 0.3; }
+.chat-empty .mark {
+  opacity: 0.35;
+  width: 200px; height: 200px;
+  object-fit: contain;
+  filter: saturate(0.9);
+}
 .chat-empty .headline { font-size: 20px; font-weight: 500; letter-spacing: -0.01em; }
 .chat-empty .suggestions {
   display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; max-width: 520px;
@@ -617,10 +625,19 @@ h1.page-title, .page-title {
 
 .messages {
   flex: 1;
-  overflow: auto;
+  overflow-y: auto;
+  overflow-x: hidden;
   padding: 8px 4px 24px;
   display: flex; flex-direction: column; gap: 16px;
   min-height: 0;
+  scrollbar-gutter: stable;
+}
+/* When only the empty state is inside, nothing can overflow — suppress the
+ * phantom scrollbar Safari renders for the track. Modern-browser :has()
+ * keeps this self-contained (no JS toggling required). */
+.messages:has(> #chat-empty:only-child) {
+  overflow: hidden;
+  scrollbar-gutter: auto;
 }
 .msg {
   display: flex;
@@ -866,6 +883,16 @@ h1.page-title, .page-title {
   border: 1px solid var(--hippo-line);
   color: var(--hippo-ink-2);
 }
+/* Inline tag run — keeps each row to a single line when tag pills would
+ * otherwise force a second row. The pill set stays available via hover
+ * styles below if that feels cramped. */
+.memory-list .tags-inline {
+  margin-left: 8px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--hippo-ink-3);
+  white-space: nowrap;
+}
 .memory-list .row-actions button {
   width: 24px; height: 24px; border-radius: 6px;
   color: var(--hippo-ink-3);
@@ -986,10 +1013,17 @@ h1.page-title, .page-title {
 }
 .ring .label .v {
   font-family: var(--font-mono);
-  font-size: 24px;
+  font-variant-numeric: tabular-nums;
+  font-size: 22px;
   font-weight: 600;
   letter-spacing: -0.02em;
+  line-height: 1;
+  max-width: 110px;
+  text-align: center;
 }
+/* Long values ($0.003951 at 9 chars+) drop a tier so they don't hit the
+ * ring walls. Six-decimal precision is only meaningful for sub-cent spend. */
+.ring .label .v[data-long] { font-size: 18px; }
 .ring .label .sv {
   color: var(--hippo-ink-3);
   font-size: 11px;

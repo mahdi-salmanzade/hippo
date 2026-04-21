@@ -1,17 +1,26 @@
 <div class="page-head-row">
   <div>
     <h1 class="page-title">Spend</h1>
-    <p class="page-sub">Running tally across all configured providers — local, not billed.</p>
+    <p class="page-sub">Running tally across all configured providers - local, not billed.</p>
   </div>
 </div>
 
 {{$spark := cumulativeCost .Data.RecentCalls}}
 {{$sparkPath := sparkPath $spark 180 36}}
+{{$totalStr := formatUSDShort .Data.Total}}
+{{$spentStr := formatUSDShort .Data.BudgetSpent}}
 
 <div class="spend-hero">
   <div class="card">
+    {{if eq .Data.CallCount 0}}
+    <div class="uppercase-label">Spend</div>
+    <div class="big">$0.00</div>
+    <div class="muted" style="font-size: 13px; margin-top: 10px; line-height: 1.55; max-width: 340px;">
+      No activity yet. Make a call from the <a href="/chat">Chat</a> tab to see spend roll in here.
+    </div>
+    {{else}}
     <div class="uppercase-label">Recent calls</div>
-    <div class="big">{{formatUSDShort .Data.Total}}</div>
+    <div class="big">{{$totalStr}}</div>
     <div class="muted" style="font-size: 13px; margin-top: 6px;">
       across <span class="num">{{.Data.CallCount}}</span> {{if eq .Data.CallCount 1}}call{{else}}calls{{end}} in the buffer
     </div>
@@ -36,6 +45,7 @@
       </svg>
       {{end}}
     </div>
+    {{end}}
   </div>
 
   <div class="card ring-card">
@@ -50,7 +60,7 @@
                 style="transition: stroke-dashoffset 0.6s ease-out"/>
       </svg>
       <div class="label">
-        <div class="v">{{formatUSDShort .Data.BudgetSpent}}</div>
+        <div class="v"{{if gt (len $spentStr) 7}} data-long{{end}}>{{$spentStr}}</div>
         <div class="sv">spent today</div>
       </div>
     </div>
@@ -92,7 +102,7 @@
       </div>
       {{end}}
     </div>
-    {{else}}<p class="muted">No spend yet.</p>{{end}}
+    {{else}}<p class="muted" style="font-size: 12px;">Appears after your first call.</p>{{end}}
   </section>
 
   <section class="card">
@@ -109,7 +119,7 @@
       </div>
       {{end}}
     </div>
-    {{else}}<p class="muted">No spend yet.</p>{{end}}
+    {{else}}<p class="muted" style="font-size: 12px;">Appears after your first call.</p>{{end}}
   </section>
 
   <section class="card">
@@ -126,7 +136,7 @@
       </div>
       {{end}}
     </div>
-    {{else}}<p class="muted">No spend yet.</p>{{end}}
+    {{else}}<p class="muted" style="font-size: 12px;">Appears after your first call.</p>{{end}}
   </section>
 </div>
 

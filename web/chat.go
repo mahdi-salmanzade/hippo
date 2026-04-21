@@ -13,9 +13,10 @@ import (
 
 // chatPageData is the render-time shape for chat.html.
 type chatPageData struct {
-	Providers []chatProviderView
-	Tasks     []string
-	ToolCount int
+	Providers   []chatProviderView
+	Tasks       []string
+	ToolCount   int
+	HasEmbedder bool
 }
 
 type chatProviderView struct {
@@ -41,18 +42,25 @@ func (s *Server) handleChatGet(w http.ResponseWriter, r *http.Request) {
 	}
 	tasks := []string{"classify", "reason", "generate", "protect"}
 	toolCount := 0
+	hasEmbedder := false
 	if b := s.Bundle(); b != nil {
 		for _, c := range b.MCPClients {
 			toolCount += len(c.Tools())
+		}
+		if b.Memory != nil {
+			if reader, ok := b.Memory.(interface{ Embedder() hippo.Embedder }); ok {
+				hasEmbedder = reader.Embedder() != nil
+			}
 		}
 	}
 	s.render(w, "chat.html", pageData{
 		Title:  "Chat",
 		Active: "chat",
 		Data: chatPageData{
-			Providers: provs,
-			Tasks:     tasks,
-			ToolCount: toolCount,
+			Providers:   provs,
+			Tasks:       tasks,
+			ToolCount:   toolCount,
+			HasEmbedder: hasEmbedder,
 		},
 	})
 }
@@ -106,7 +114,7 @@ func (s *Server) handleChatPost(w http.ResponseWriter, r *http.Request) {
 		call.UseMemory = hippo.MemoryScope{Mode: hippo.MemoryScopeRecent}
 	}
 	if req.Provider != "" {
-		// A fixed provider bypasses the router — tell the Brain what
+		// A fixed provider bypasses the router - tell the Brain what
 		// model to use and let it dispatch to the first registered
 		// provider of that name. The router will still pick if Model
 		// is empty; with a pinned model and provider the call goes
@@ -244,7 +252,7 @@ func (s *Server) handleChatStream(w http.ResponseWriter, r *http.Request) {
 // writeSSE frames one event and flushes the connection.
 func writeSSE(w http.ResponseWriter, f http.Flusher, event, data string) {
 	_, _ = fmt.Fprintf(w, "event: %s\n", event)
-	// Data may contain embedded newlines — SSE requires each one
+	// Data may contain embedded newlines - SSE requires each one
 	// prefixed with "data: " on the wire. strconv.Quote would escape
 	// them, but we want raw; walk the bytes.
 	for _, line := range splitLines(data) {

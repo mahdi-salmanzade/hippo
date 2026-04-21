@@ -228,11 +228,20 @@ func (s *statusWriter) Flush() {
 func parseTemplates() (*template.Template, error) {
 	funcs := template.FuncMap{
 		"formatUSD": func(v float64) string { return fmt.Sprintf("$%.6f", v) },
+		// formatUSDShort picks a precision that's readable without being
+		// visual noise: whole dollars use 2 decimals, sub-dollar spend
+		// uses 6 (fractions-of-a-cent need to be legible), and exact
+		// zero shows as "$0.00" so the empty state doesn't render
+		// "$0.000000" under a 140px ring.
 		"formatUSDShort": func(v float64) string {
-			if v >= 1 {
+			switch {
+			case v == 0:
+				return "$0.00"
+			case v >= 1:
 				return fmt.Sprintf("$%.2f", v)
+			default:
+				return fmt.Sprintf("$%.6f", v)
 			}
-			return fmt.Sprintf("$%.6f", v)
 		},
 		"formatPct": func(num, denom float64) string {
 			if denom <= 0 {
