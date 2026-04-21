@@ -2,6 +2,7 @@ package web
 
 import (
 	"fmt"
+	"path/filepath"
 	"sync"
 	"testing"
 	"time"
@@ -139,6 +140,63 @@ func TestSessionLifecycle(t *testing.T) {
 	}
 	if got := s.TakeSession("abc"); got != nil {
 		t.Fatalf("second Take = %+v; want nil", got)
+	}
+}
+
+func TestStatePersistsRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "spend.json")
+
+	// First run: record three calls.
+	s1 := NewState()
+	s1.SetPersistPath(path)
+	s1.Record(CallRecord{Provider: "anthropic", Model: "claude-sonnet-4-6", Task: "generate", CostUSD: 0.01})
+	s1.Record(CallRecord{Provider: "openai", Model: "gpt-5", Task: "classify", CostUSD: 0.005})
+	s1.Record(CallRecord{Provider: "anthropic", Model: "claude-haiku-4-5", Task: "reason", CostUSD: 0.002})
+
+	// Second run: load from the same file and verify.
+	s2 := NewState()
+	if err := s2.LoadFrom(path); err != nil {
+		t.Fatalf("LoadFrom: %v", err)
+	}
+	if n := s2.CallCount(); n != 3 {
+		t.Errorf("CallCount after load = %d; want 3", n)
+	}
+	if got := s2.TotalSpend(); got < 0.016 || got > 0.018 {
+		t.Errorf("TotalSpend after load = %v; want ~0.017", got)
+	}
+}
+
+func TestStateLoadDropsPendingRecords(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "spend.json")
+
+	// Simulate a prior process that crashed mid-stream: a placeholder
+	// was persisted with Pending=true and no cost. On load we should
+	// drop it so the prior-run turn doesn't haunt the next session.
+	s1 := NewState()
+	s1.SetPersistPath(path)
+	s1.Record(CallRecord{Provider: "anthropic", CostUSD: 0.01, Pending: false})
+	s1.Record(CallRecord{Task: "generate", Pending: true})
+
+	s2 := NewState()
+	if err := s2.LoadFrom(path); err != nil {
+		t.Fatal(err)
+	}
+	if n := s2.CallCount(); n != 1 {
+		t.Errorf("CallCount after load = %d; want 1 (pending row should be dropped)", n)
+	}
+}
+
+func TestStateLoadMissingFileIsNoOp(t *testing.T) {
+	s := NewState()
+	// Non-existent path — LoadFrom returns nil, state stays empty.
+	err := s.LoadFrom(filepath.Join(t.TempDir(), "does-not-exist.json"))
+	if err != nil {
+		t.Errorf("missing file should not error; got %v", err)
+	}
+	if n := s.CallCount(); n != 0 {
+		t.Errorf("CallCount = %d; want 0", n)
 	}
 }
 

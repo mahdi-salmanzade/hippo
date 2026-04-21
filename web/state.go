@@ -3,6 +3,10 @@ package web
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
 	"sort"
 	"sync"
 	"time"
@@ -20,11 +24,24 @@ const defaultRecentCap = 100
 // plus a session map for streaming chat turns. It is kept outside the
 // hippo.Brain by design - Brain stays ignorant of the UI so the library
 // core remains reusable without pulling the web package in.
+//
+// # Persistence
+//
+// When persistPath is set, Record/UpdateByID/RemoveByID flush the
+// ring to that JSON file. Server.New calls LoadFrom on startup so
+// spend survives restarts. The budget tracker is re-seeded from the
+// loaded ring (sum of CostUSD) so the daily-spent number matches the
+// Recent Calls table after a cold start.
 type State struct {
 	mu       sync.RWMutex
 	recent   []CallRecord
 	cap      int
 	sessions map[string]*ChatSession
+
+	persistPath string
+	// persistErrLogged guards against log-spam when the persist path is
+	// unwritable — we warn once, then keep running in memory.
+	persistErrLogged bool
 }
 
 // CallRecord is one line of the recent-calls table. Prompt/Response are
@@ -73,7 +90,6 @@ func (s *State) Record(r CallRecord) string {
 		r.ID = newRecordID()
 	}
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	if len(s.recent) >= s.cap {
 		// Drop the oldest (index 0). Cheap for cap=100; a real
 		// ring would be nicer but for 100 rows the copy doesn't
@@ -82,6 +98,8 @@ func (s *State) Record(r CallRecord) string {
 		s.recent = s.recent[:len(s.recent)-1]
 	}
 	s.recent = append(s.recent, r)
+	s.persistLocked()
+	s.mu.Unlock()
 	return r.ID
 }
 
@@ -98,6 +116,7 @@ func (s *State) UpdateByID(id string, fn func(r *CallRecord)) bool {
 			// Re-truncate in case content grew in the update.
 			s.recent[i].Prompt = truncatePreview(s.recent[i].Prompt)
 			s.recent[i].Response = truncatePreview(s.recent[i].Response)
+			s.persistLocked()
 			return true
 		}
 	}
@@ -114,6 +133,7 @@ func (s *State) RemoveByID(id string) bool {
 	for i := range s.recent {
 		if s.recent[i].ID == id {
 			s.recent = append(s.recent[:i], s.recent[i+1:]...)
+			s.persistLocked()
 			return true
 		}
 	}
@@ -127,6 +147,91 @@ func newRecordID() string {
 	var b [6]byte
 	_, _ = rand.Read(b[:])
 	return hex.EncodeToString(b[:])
+}
+
+// SetPersistPath enables disk persistence. Subsequent mutations flush
+// the ring to path atomically (write-to-tmp, rename). Empty = stay
+// in-memory only. Call LoadFrom separately to read existing state.
+func (s *State) SetPersistPath(path string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.persistPath = path
+}
+
+// LoadFrom hydrates State.recent from a JSON file written by a prior
+// run. Missing file returns nil — a fresh install shouldn't have one.
+// Corrupt file returns an error; the caller can choose to warn and
+// continue rather than fail startup.
+//
+// Pending=true records in the file are filtered out: they represent
+// turns that were in flight when the prior process exited, so their
+// cost is unknown and counting them would be misleading.
+func (s *State) LoadFrom(path string) error {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("web: state load: %w", err)
+	}
+	var loaded []CallRecord
+	if err := json.Unmarshal(data, &loaded); err != nil {
+		return fmt.Errorf("web: state load: %w", err)
+	}
+	cleaned := make([]CallRecord, 0, len(loaded))
+	for _, r := range loaded {
+		if r.Pending {
+			continue
+		}
+		cleaned = append(cleaned, r)
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	// Respect cap: trim to the newest cap entries if the file has more.
+	if s.cap > 0 && len(cleaned) > s.cap {
+		cleaned = cleaned[len(cleaned)-s.cap:]
+	}
+	s.recent = cleaned
+	return nil
+}
+
+// persistLocked writes the current ring to persistPath. Must be
+// called while holding s.mu (write lock). Synchronous — at user
+// scale (a handful of writes per minute) the extra milliseconds
+// don't matter, and serialising through s.mu removes a nasty
+// goroutine-race window where two concurrent saves competed for the
+// same .tmp file. Uses atomic rename to avoid a partial file on
+// crash. Failures log once and then stay quiet.
+func (s *State) persistLocked() {
+	if s.persistPath == "" {
+		return
+	}
+	buf, err := json.MarshalIndent(s.recent, "", "  ")
+	if err != nil {
+		s.warnOnceNoLock("marshal", err)
+		return
+	}
+	_ = os.MkdirAll(filepath.Dir(s.persistPath), 0o755)
+	tmp := s.persistPath + ".tmp"
+	if err := os.WriteFile(tmp, buf, 0o600); err != nil {
+		s.warnOnceNoLock("write", err)
+		return
+	}
+	if err := os.Rename(tmp, s.persistPath); err != nil {
+		s.warnOnceNoLock("rename", err)
+		return
+	}
+}
+
+// warnOnceNoLock is called from persistLocked which already holds
+// s.mu. The "once" is protected by the same lock, so no separate
+// mutex is required.
+func (s *State) warnOnceNoLock(op string, err error) {
+	if s.persistErrLogged {
+		return
+	}
+	s.persistErrLogged = true
+	fmt.Fprintf(os.Stderr, "web: state persist %s failed: %v (continuing in-memory)\n", op, err)
 }
 
 // Recent returns up to n completed records, newest first. Pending

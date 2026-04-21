@@ -109,11 +109,39 @@ func New(cfg *Config, opts ...Option) (*Server, error) {
 		s.chatStore = cs
 	}
 
+	// Spend persistence. We load recent-calls from JSON before we
+	// build the Brain so the budget tracker can be seeded with the
+	// loaded spend (see BuildBrain). Failure to read is not fatal —
+	// the UI just starts with an empty Recent Calls table.
+	spendPath := cfg.Spend.PersistPath
+	if spendPath == "" {
+		spendPath = "~/.hippo/spend.json"
+	}
+	if expanded, err := ExpandPath(spendPath); err == nil && expanded != "" {
+		if err := s.state.LoadFrom(expanded); err != nil {
+			s.logger.Warn("web: spend state load failed", "path", expanded, "err", err)
+		}
+		s.state.SetPersistPath(expanded)
+	}
+
 	bundle, err := BuildBrain(cfg, s.logger, WithExtraTools(s.builtinTools...))
 	if err != nil {
 		s.logger.Warn("web: initial brain build failed; serving config page only", "err", err)
 	} else {
 		s.bundle = bundle
+		// Seed the budget tracker with loaded spend so the daily-spent
+		// number matches the Recent Calls table after a cold start. We
+		// don't have a BudgetTracker.Set method; Charge is the only
+		// way in, and that's what the stream handler calls on every
+		// live turn, so replaying the loaded usage stays consistent.
+		if bundle.Budget != nil {
+			for _, r := range s.state.Recent(0) {
+				if r.Provider == "" {
+					continue
+				}
+				_ = bundle.Budget.Charge(r.Provider, r.Model, r.Usage)
+			}
+		}
 	}
 	return s, nil
 }

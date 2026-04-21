@@ -31,6 +31,7 @@ type Config struct {
 	PolicyPath string                    `yaml:"policy_path"`
 	Memory     MemoryConfig              `yaml:"memory"`
 	Chat       ChatConfig                `yaml:"chat,omitempty"`
+	Spend      SpendConfig               `yaml:"spend,omitempty"`
 	Server     ServerConfig              `yaml:"server"`
 	MCP        MCPConfig                 `yaml:"mcp,omitempty"`
 
@@ -44,6 +45,13 @@ type Config struct {
 // runs or an absolute path for a custom location.
 type ChatConfig struct {
 	DBPath string `yaml:"db_path,omitempty"`
+}
+
+// SpendConfig controls persistence of the recent-calls ring so the
+// Spend page, hippo_spend tool, and daily budget survive restarts.
+// Set PersistPath="" to disable (back to in-memory-only behaviour).
+type SpendConfig struct {
+	PersistPath string `yaml:"persist_path,omitempty"`
 }
 
 // MCPConfig holds the user-declared Model Context Protocol server
