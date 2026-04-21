@@ -1,6 +1,7 @@
 package web
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -143,10 +144,23 @@ func (s *Server) handleChatPost(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "session id: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
+
+	// Persist the user turn to the chat store as soon as we accept it
+	// — if the browser closes mid-stream the turn is still on disk.
+	// Missing chat_id (or store unavailable) is not fatal; chat works
+	// without persistence, just without drawer history.
+	chatID := strings.TrimSpace(r.FormValue("chat_id"))
+	if chatID != "" && s.chatStore != nil {
+		if err := s.chatStore.Append(r.Context(), chatID, "user", req.Prompt); err != nil {
+			s.logger.Warn("chat: persist user turn failed", "chat_id", chatID, "err", err)
+		}
+	}
+
 	s.state.PutSession(id, &ChatSession{
 		ID:        id,
 		Call:      call,
 		CreatedAt: time.Now(),
+		ChatID:    chatID,
 	})
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]string{"session": id})
@@ -262,6 +276,17 @@ func (s *Server) handleChatStream(w http.ResponseWriter, r *http.Request) {
 		// record partial turns to keep the spend table honest.
 	} else {
 		s.state.Record(record)
+	}
+
+	// Persist the assistant turn if the client opted into drawer
+	// history. We write the accumulated text (no tool-call internals);
+	// that matches what the client transcript carries forward into the
+	// next turn. Errors here are logged, not fatal — the session is
+	// already closed.
+	if sess.ChatID != "" && s.chatStore != nil && fullText != "" {
+		if err := s.chatStore.Append(context.Background(), sess.ChatID, "assistant", fullText); err != nil {
+			s.logger.Warn("chat: persist assistant turn failed", "chat_id", sess.ChatID, "err", err)
+		}
 	}
 }
 

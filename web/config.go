@@ -30,12 +30,20 @@ type Config struct {
 	Budget     BudgetConfig              `yaml:"budget"`
 	PolicyPath string                    `yaml:"policy_path"`
 	Memory     MemoryConfig              `yaml:"memory"`
+	Chat       ChatConfig                `yaml:"chat,omitempty"`
 	Server     ServerConfig              `yaml:"server"`
 	MCP        MCPConfig                 `yaml:"mcp,omitempty"`
 
 	// path remembers where this Config was loaded from so Save can
 	// round-trip without the caller tracking it separately.
 	path string `yaml:"-"`
+}
+
+// ChatConfig controls the chat persistence store. Omitted = default
+// SQLite path ~/.hippo/chats.db. Set DBPath=":memory:" for ephemeral
+// runs or an absolute path for a custom location.
+type ChatConfig struct {
+	DBPath string `yaml:"db_path,omitempty"`
 }
 
 // MCPConfig holds the user-declared Model Context Protocol server

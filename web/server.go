@@ -43,6 +43,12 @@ type Server struct {
 	// because bundles get swapped on /config POST and /policy POST.
 	builtinTools []hippo.Tool
 
+	// chatStore persists chat transcripts so users can reopen past
+	// conversations from the drawer. Best-effort: if the store fails
+	// to open, the server logs a warning and chat still works in
+	// ephemeral mode (no history).
+	chatStore *ChatStore
+
 	listener net.Listener
 	srv      *http.Server
 }
@@ -89,6 +95,19 @@ func New(cfg *Config, opts ...Option) (*Server, error) {
 	// before Bundle is assigned since invocation only happens inside
 	// Brain.Stream, by which point s.bundle is populated.
 	s.builtinTools = newBuiltinTools(s.state, s.cfg, s.Bundle)
+
+	// Chat persistence. Failure is not fatal — a missing / unwritable
+	// ~/.hippo/chats.db is logged and the drawer UI shows an empty
+	// state. The in-memory transcript still works during the session.
+	chatDBPath := cfg.Chat.DBPath
+	if chatDBPath == "" {
+		chatDBPath = "~/.hippo/chats.db"
+	}
+	if cs, err := NewChatStore(chatDBPath); err != nil {
+		s.logger.Warn("web: chat store unavailable", "err", err)
+	} else {
+		s.chatStore = cs
+	}
 
 	bundle, err := BuildBrain(cfg, s.logger, WithExtraTools(s.builtinTools...))
 	if err != nil {
@@ -161,6 +180,9 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	s.bundleMu.Unlock()
 	if b != nil {
 		_ = b.Close()
+	}
+	if s.chatStore != nil {
+		_ = s.chatStore.Close()
 	}
 	return nil
 }

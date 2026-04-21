@@ -137,17 +137,18 @@
     });
   });
 
-  if (newChatBtn) {
-    newChatBtn.addEventListener("click", function () {
-      const empty = emptyState;
-      msgs.innerHTML = "";
-      if (empty) msgs.appendChild(empty);
-      if (statusEl) statusEl.textContent = "";
-      transcript = [];
-      currentAssistantText = "";
-      if (promptBox) { promptBox.value = ""; updateSendEnabled(); promptBox.focus(); }
-    });
+  function resetChat() {
+    const empty = emptyState;
+    msgs.innerHTML = "";
+    if (empty) msgs.appendChild(empty);
+    if (statusEl) statusEl.textContent = "";
+    transcript = [];
+    currentAssistantText = "";
+    activeChatID = null;
+    if (promptBox) { promptBox.value = ""; updateSendEnabled(); promptBox.focus(); }
+    highlightActiveDrawerRow();
   }
+  if (newChatBtn) newChatBtn.addEventListener("click", resetChat);
 
   let activeStream = null;
   let activeBody = null;
@@ -158,6 +159,10 @@
   // effectively single-turn. Cleared by "New chat".
   let transcript = [];
   let currentAssistantText = "";
+  // The persisted chat id this session writes to. Null until the
+  // first send (lazy-created so idle page-loads don't pollute the
+  // drawer with empty "untitled" rows).
+  let activeChatID = null;
 
   function hideEmpty() {
     if (emptyState && emptyState.parentNode) emptyState.remove();
@@ -377,6 +382,17 @@
     const prompt = promptBox.value.trim();
     if (!prompt) return;
 
+    // Lazy-create the persisted chat on the first send so empty chats
+    // never appear in the drawer. ensureActiveChat resolves the
+    // activeChatID; once it's set, every subsequent POST carries it.
+    ensureActiveChat().then(function () { doSend(prompt); }).catch(function () {
+      // If the store is unavailable we still let the chat proceed
+      // without persistence — activeChatID stays null.
+      doSend(prompt);
+    });
+  }
+
+  function doSend(prompt) {
     appendMsg("user", prompt);
     const pair = appendMsg("assistant", "");
     activeBody = pair.body;
@@ -401,6 +417,7 @@
       memory: memChk && memChk.checked ? "on" : "",
       tools: toolsChk && toolsChk.checked ? "on" : "",
       history: JSON.stringify(transcript),
+      chat_id: activeChatID || "",
     });
     // Append the user turn to the transcript now — the assistant turn
     // is appended when streaming completes (in the "done" handler).
@@ -487,6 +504,9 @@
       currentAssistantText = "";
       activeInflight = false;
       updateSendEnabled();
+      // Refresh the drawer list so a newly-titled conversation or an
+      // updated_at bump shows up immediately without a page reload.
+      refreshDrawer();
     });
   }
 
@@ -499,4 +519,172 @@
       }
     });
   }
+
+  // ── conversation drawer ─────────────────────────────────────────
+  // Persistence is handled server-side via ChatStore. The drawer UI
+  // lists past conversations, lets the user resume or delete them,
+  // and keeps activeChatID in sync so every send writes to the right
+  // row.
+  const drawerEl      = document.getElementById("chat-drawer");
+  const drawerScrim   = document.getElementById("chat-drawer-scrim");
+  const drawerToggle  = document.getElementById("chat-history-toggle");
+  const drawerCloseBt = document.getElementById("chat-drawer-close");
+  const drawerNewBt   = document.getElementById("chat-drawer-new");
+  const drawerList    = document.getElementById("chat-drawer-list");
+
+  function openDrawer() {
+    if (!drawerEl || !drawerScrim) return;
+    drawerEl.hidden = false; drawerScrim.hidden = false;
+    requestAnimationFrame(function () {
+      drawerEl.setAttribute("data-open", "");
+      drawerScrim.setAttribute("data-open", "");
+    });
+    drawerEl.setAttribute("aria-hidden", "false");
+    refreshDrawer();
+  }
+  function closeDrawer() {
+    if (!drawerEl || !drawerScrim) return;
+    drawerEl.removeAttribute("data-open");
+    drawerScrim.removeAttribute("data-open");
+    drawerEl.setAttribute("aria-hidden", "true");
+    // Let the transform animation complete before hiding.
+    setTimeout(function () {
+      drawerEl.hidden = true; drawerScrim.hidden = true;
+    }, 260);
+  }
+
+  if (drawerToggle) drawerToggle.addEventListener("click", openDrawer);
+  if (drawerCloseBt) drawerCloseBt.addEventListener("click", closeDrawer);
+  if (drawerScrim) drawerScrim.addEventListener("click", closeDrawer);
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "Escape" && drawerEl && drawerEl.hasAttribute("data-open")) {
+      closeDrawer();
+    }
+  });
+  if (drawerNewBt) drawerNewBt.addEventListener("click", function () {
+    resetChat();
+    closeDrawer();
+  });
+
+  function ensureActiveChat() {
+    if (activeChatID) return Promise.resolve(activeChatID);
+    return fetch("/api/chats", { method: "POST" })
+      .then(function (r) { if (!r.ok) throw new Error("create failed"); return r.json(); })
+      .then(function (d) { activeChatID = d.id; return activeChatID; });
+  }
+
+  function refreshDrawer() {
+    if (!drawerList) return;
+    fetch("/api/chats?limit=50")
+      .then(function (r) { return r.ok ? r.json() : { sessions: [] }; })
+      .then(function (data) { renderDrawer(data.sessions || []); })
+      .catch(function () { /* best-effort; leave existing content */ });
+  }
+
+  function renderDrawer(sessions) {
+    if (!drawerList) return;
+    if (!sessions.length) {
+      drawerList.innerHTML = '<div class="chat-drawer-empty">No conversations yet.</div>';
+      return;
+    }
+    drawerList.innerHTML = "";
+    sessions.forEach(function (s) {
+      const row = document.createElement("button");
+      row.type = "button";
+      row.className = "chat-drawer-row";
+      if (s.id === activeChatID) row.setAttribute("data-active", "true");
+      row.setAttribute("data-chat-id", s.id);
+
+      const title = document.createElement("div");
+      title.className = "row-title";
+      title.textContent = s.title || "(untitled)";
+      row.appendChild(title);
+
+      if (s.preview && s.preview !== s.title) {
+        const p = document.createElement("div");
+        p.className = "row-preview";
+        p.textContent = s.preview;
+        row.appendChild(p);
+      }
+
+      const meta = document.createElement("div");
+      meta.className = "row-meta";
+      meta.textContent = relativeTime(s.updated_at) + " · " + s.message_count + (s.message_count === 1 ? " msg" : " msgs");
+      row.appendChild(meta);
+
+      const del = document.createElement("button");
+      del.type = "button";
+      del.className = "row-delete";
+      del.setAttribute("aria-label", "Delete conversation");
+      del.innerHTML = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2M6 6v14a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V6"/></svg>';
+      del.addEventListener("click", function (e) {
+        e.stopPropagation();
+        if (!confirm("Delete this conversation?")) return;
+        fetch("/api/chats/" + encodeURIComponent(s.id), { method: "DELETE" })
+          .then(function () {
+            if (s.id === activeChatID) resetChat();
+            refreshDrawer();
+          });
+      });
+      row.appendChild(del);
+
+      row.addEventListener("click", function () { loadChat(s.id); });
+      drawerList.appendChild(row);
+    });
+  }
+
+  function loadChat(id) {
+    if (activeInflight) return;
+    fetch("/api/chats/" + encodeURIComponent(id))
+      .then(function (r) { if (!r.ok) throw new Error("load failed"); return r.json(); })
+      .then(function (data) {
+        activeChatID = id;
+        transcript = (data.messages || []).map(function (m) {
+          return { role: m.role, content: m.content };
+        });
+        // Clear the view, then re-render every stored turn. We push
+        // transcript entries in lockstep with appendMsg via slice()
+        // instead of touching transcript so we don't double-count.
+        msgs.innerHTML = "";
+        transcript.forEach(function (m) {
+          const pair = appendMsg(m.role, "");
+          if (m.role === "assistant") {
+            while (pair.body.firstChild) pair.body.removeChild(pair.body.firstChild);
+            pair.body.appendChild(renderMarkdown(m.content));
+          } else {
+            pair.body.textContent = m.content;
+          }
+        });
+        highlightActiveDrawerRow();
+        closeDrawer();
+        if (promptBox) promptBox.focus();
+      })
+      .catch(function (err) { setStatus("load error: " + err.message); });
+  }
+
+  function highlightActiveDrawerRow() {
+    if (!drawerList) return;
+    drawerList.querySelectorAll(".chat-drawer-row").forEach(function (r) {
+      if (r.getAttribute("data-chat-id") === activeChatID) {
+        r.setAttribute("data-active", "true");
+      } else {
+        r.removeAttribute("data-active");
+      }
+    });
+  }
+
+  function relativeTime(isoString) {
+    if (!isoString) return "";
+    const t = new Date(isoString).getTime();
+    if (isNaN(t)) return "";
+    const diff = Math.floor((Date.now() - t) / 1000);
+    if (diff < 60)      return "just now";
+    if (diff < 3600)    return Math.floor(diff / 60) + "m ago";
+    if (diff < 86400)   return Math.floor(diff / 3600) + "h ago";
+    if (diff < 604800)  return Math.floor(diff / 86400) + "d ago";
+    return new Date(t).toLocaleDateString();
+  }
+
+  // Pre-load the drawer once so the list is hot when the user opens it.
+  refreshDrawer();
 })();

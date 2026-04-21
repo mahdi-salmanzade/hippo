@@ -42,6 +42,9 @@
       <span class="pill pill-cyan">{{.Data.ToolCount}}</span>
     </span>
     <span class="spacer"></span>
+    <button id="chat-history-toggle" class="btn btn-ghost" type="button" aria-label="Open conversation history">
+      {{template "icon_clock"}}<span>History</span>
+    </button>
     <button id="new-chat" class="btn btn-ghost" type="button">
       {{template "icon_plus"}}<span>New chat</span>
     </button>
@@ -91,6 +94,23 @@
     <div class="chat-status" id="status"></div>
   </div>
 </div>
+
+<!-- Conversation drawer. Hidden by default; JS toggles the open class. -->
+<div id="chat-drawer-scrim" class="chat-drawer-scrim" hidden></div>
+<aside id="chat-drawer" class="chat-drawer" hidden aria-label="Conversations" aria-hidden="true">
+  <header class="chat-drawer-head">
+    <div class="chat-drawer-title">Conversations</div>
+    <button id="chat-drawer-new" class="btn btn-ghost btn-sm" type="button">
+      {{template "icon_plus"}}<span>New</span>
+    </button>
+    <button id="chat-drawer-close" class="btn btn-ghost btn-icon btn-sm" type="button" aria-label="Close">
+      {{template "icon_close"}}
+    </button>
+  </header>
+  <div class="chat-drawer-list" id="chat-drawer-list">
+    <div class="chat-drawer-empty" id="chat-drawer-empty">No conversations yet.</div>
+  </div>
+</aside>
 
 <script type="application/json" id="providers-data">
 {{- $provs := .Data.Providers -}}

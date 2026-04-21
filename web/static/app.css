@@ -861,6 +861,125 @@ h1.page-title, .page-title {
  * reserve dead space below the composer. */
 .chat-status:empty { display: none; }
 
+/* ── chat history drawer ────────────────────────────────────────
+ * Slides in from the left; the scrim dims the rest of the page
+ * and swallows clicks to dismiss. Keep it fixed-position so it
+ * floats above the sticky app-bar.                              */
+.chat-drawer-scrim {
+  position: fixed; inset: 0;
+  background: color-mix(in oklab, var(--hippo-ink) 45%, transparent);
+  z-index: 80;
+  opacity: 0;
+  transition: opacity var(--t-base);
+  pointer-events: none;
+}
+.chat-drawer-scrim[data-open] {
+  opacity: 1;
+  pointer-events: auto;
+}
+.chat-drawer {
+  position: fixed;
+  top: 0; left: 0; bottom: 0;
+  width: 320px; max-width: 85vw;
+  background: var(--hippo-paper);
+  border-right: 1px solid var(--hippo-line);
+  box-shadow: var(--shadow-lg);
+  z-index: 90;
+  display: flex; flex-direction: column;
+  transform: translateX(-100%);
+  transition: transform var(--t-slow);
+}
+.chat-drawer[data-open] {
+  transform: translateX(0);
+}
+.chat-drawer[hidden] { display: flex; } /* transform still hides it */
+
+.chat-drawer-head {
+  display: flex; align-items: center; gap: 8px;
+  padding: 14px 14px 12px;
+  border-bottom: 1px solid var(--hippo-line);
+}
+.chat-drawer-title {
+  flex: 1;
+  font-weight: 600;
+  font-size: 14px;
+  letter-spacing: -0.01em;
+}
+
+.chat-drawer-list {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 8px 8px 16px;
+  scrollbar-width: none;
+}
+.chat-drawer-list::-webkit-scrollbar { display: none; }
+
+.chat-drawer-empty {
+  color: var(--hippo-ink-3);
+  font-size: 12px;
+  padding: 20px 8px;
+  text-align: center;
+}
+
+.chat-drawer-row {
+  position: relative;
+  display: block;
+  padding: 10px 36px 10px 12px;
+  border-radius: var(--r-sm);
+  color: var(--hippo-ink);
+  transition: background var(--t-base);
+  cursor: pointer;
+  margin-bottom: 2px;
+  border: 1px solid transparent;
+  background: transparent;
+  width: 100%;
+  text-align: left;
+}
+.chat-drawer-row:hover { background: var(--hippo-paper-2); }
+.chat-drawer-row[data-active="true"] {
+  background: var(--hippo-rust-tint);
+  border-color: var(--hippo-rust-soft);
+}
+.chat-drawer-row .row-title {
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: -0.005em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.chat-drawer-row .row-preview {
+  font-size: 11px;
+  color: var(--hippo-ink-3);
+  margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.chat-drawer-row .row-meta {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--hippo-ink-3);
+  margin-top: 4px;
+}
+.chat-drawer-row .row-delete {
+  position: absolute;
+  right: 8px; top: 50%;
+  transform: translateY(-50%);
+  width: 24px; height: 24px;
+  border-radius: 6px;
+  color: var(--hippo-ink-3);
+  opacity: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  transition: opacity var(--t-base), background var(--t-base), color var(--t-base);
+}
+.chat-drawer-row:hover .row-delete { opacity: 1; }
+.chat-drawer-row .row-delete:hover {
+  background: var(--hippo-clay-soft);
+  color: var(--hippo-clay);
+}
+
 /* ═══════════════════════════════════════════════════════════
    MEMORY
    ═══════════════════════════════════════════════════════════ */

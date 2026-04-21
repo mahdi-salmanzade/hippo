@@ -186,6 +186,10 @@ type ChatSession struct {
 	Call      hippo.Call
 	CreatedAt time.Time
 	Consumed  bool
+	// ChatID is the persistent chat drawer id this turn belongs to
+	// (see ChatStore). Empty means the client opted out of
+	// persistence; the server then won't try to Append the turns.
+	ChatID string
 }
 
 // sessionTTL is the maximum time a session can sit unclaimed between
