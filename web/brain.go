@@ -50,6 +50,26 @@ type BrainBundle struct {
 	Warnings   []string
 }
 
+// BuildOption tweaks BuildBrain. Kept as a variadic so adding knobs
+// later doesn't break every caller — the server passes built-in tools
+// this way and tests skip them entirely.
+type BuildOption func(*buildConfig)
+
+type buildConfig struct {
+	extraTools []hippo.Tool
+}
+
+// WithExtraTools registers additional hippo tools on the Brain — e.g.
+// the web server's built-in hippo_spend / hippo_memory_search /
+// hippo_policy_read set. Called with zero tools is a no-op.
+func WithExtraTools(tools ...hippo.Tool) BuildOption {
+	return func(c *buildConfig) {
+		if len(tools) > 0 {
+			c.extraTools = append(c.extraTools, tools...)
+		}
+	}
+}
+
 // Close releases resources owned by the bundle. Safe to call on a nil
 // bundle.
 func (b *BrainBundle) Close() error {
@@ -88,13 +108,20 @@ func (b *BrainBundle) Close() error {
 // A Config with zero enabled providers still builds successfully, with
 // Brain == nil. The web UI keeps serving the config page in that state
 // so the user can add credentials.
-func BuildBrain(cfg *Config, logger *slog.Logger) (*BrainBundle, error) {
+func BuildBrain(cfg *Config, logger *slog.Logger, buildOpts ...BuildOption) (*BrainBundle, error) {
 	if logger == nil {
 		logger = slog.New(slog.NewTextHandler(io.Discard, nil))
+	}
+	bo := buildConfig{}
+	for _, o := range buildOpts {
+		o(&bo)
 	}
 	bundle := &BrainBundle{}
 	var opts []hippo.Option
 	opts = append(opts, hippo.WithLogger(logger))
+	if len(bo.extraTools) > 0 {
+		opts = append(opts, hippo.WithTools(bo.extraTools...))
+	}
 
 	// Providers. Order (alphabetical by name) determines the no-router
 	// fallback pick; the router overrides this once attached.

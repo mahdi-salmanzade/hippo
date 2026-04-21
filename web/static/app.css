@@ -114,6 +114,11 @@ html, body {
   -moz-osx-font-smoothing: grayscale;
   font-feature-settings: "ss01", "cv11";
 }
+/* Kill any phantom horizontal scrollbar at the document level without
+ * creating a second scroll container on body. `clip` is the modern
+ * replacement for `hidden` — doesn't establish a scroll context, so the
+ * normal vertical scroll keeps working on html. */
+html { overflow-x: clip; }
 body { transition: background-color var(--t-base), color var(--t-base); }
 
 a { color: var(--hippo-rust); text-decoration: none; }
@@ -442,6 +447,9 @@ main {
   margin: 0 auto;
   padding: 32px 24px 64px;
 }
+/* Chat composer is itself the bottom visual edge — use a small tuned
+ * gap (not the 64px page-bottom other pages get). */
+main:has(.chat) { padding-bottom: 16px; }
 
 h1.page-title, .page-title {
   font-size: var(--fs-2xl);
@@ -560,9 +568,9 @@ h1.page-title, .page-title {
 
 .chat {
   display: flex; flex-direction: column;
-  height: calc(100vh - 56px - 96px);
+  /* 56px app-bar + 32px main top-padding + 16px main bottom-padding. */
+  height: calc(100vh - 56px - 48px);
   min-height: 520px;
-  max-height: 900px;
 }
 .chat-controls {
   display: flex; align-items: center; gap: 10px;
@@ -600,9 +608,6 @@ h1.page-title, .page-title {
 }
 .chat-empty .mark {
   opacity: 0.35;
-  width: 200px; height: 200px;
-  object-fit: contain;
-  filter: saturate(0.9);
 }
 .chat-empty .headline { font-size: 20px; font-weight: 500; letter-spacing: -0.01em; }
 .chat-empty .suggestions {
@@ -630,14 +635,17 @@ h1.page-title, .page-title {
   padding: 8px 4px 24px;
   display: flex; flex-direction: column; gap: 16px;
   min-height: 0;
-  scrollbar-gutter: stable;
+  /* Hide the native track entirely on all platforms — macOS with
+   * "Show scrollbars: Always" was rendering a permanent gutter that
+   * read as a scrollbar even in empty state. Wheel/trackpad scroll
+   * still works. */
+  scrollbar-width: none;
 }
-/* When only the empty state is inside, nothing can overflow — suppress the
- * phantom scrollbar Safari renders for the track. Modern-browser :has()
- * keeps this self-contained (no JS toggling required). */
+.messages::-webkit-scrollbar { display: none; }
+/* Belt-and-suspenders: suppress overflow entirely when only the empty
+ * state is inside so nothing can even try to scroll. */
 .messages:has(> #chat-empty:only-child) {
   overflow: hidden;
-  scrollbar-gutter: auto;
 }
 .msg {
   display: flex;
@@ -689,6 +697,53 @@ h1.page-title, .page-title {
   font-family: var(--font-mono);
   white-space: pre;
 }
+/* Markdown structural elements rendered from LLM output. Kept
+ * visually compact so a bulleted answer doesn't push the bubble
+ * taller than it needs to be. */
+.msg .body p { margin: 0 0 8px; }
+.msg .body p:last-child { margin-bottom: 0; }
+.msg .body h1, .msg .body h2, .msg .body h3,
+.msg .body h4, .msg .body h5, .msg .body h6 {
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.3;
+  margin: 12px 0 4px;
+}
+.msg .body h1 { font-size: 17px; }
+.msg .body h2 { font-size: 15px; }
+.msg .body h3 { font-size: 14px; }
+.msg .body h4, .msg .body h5, .msg .body h6 { font-size: 13px; }
+.msg .body h1:first-child, .msg .body h2:first-child, .msg .body h3:first-child { margin-top: 0; }
+.msg .body ul, .msg .body ol { margin: 4px 0 8px; padding-left: 20px; }
+.msg .body li { margin-bottom: 2px; }
+.msg .body li:last-child { margin-bottom: 0; }
+.msg .body strong { font-weight: 600; color: var(--hippo-ink); }
+.msg .body em { font-style: italic; }
+.msg .body a { color: var(--hippo-rust); }
+.msg .body table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 8px 0;
+  font-size: 13px;
+}
+.msg .body th,
+.msg .body td {
+  padding: 6px 10px;
+  text-align: left;
+  border-bottom: 1px solid var(--hippo-line);
+}
+.msg .body th {
+  font-weight: 600;
+  color: var(--hippo-ink);
+  background: var(--hippo-paper-3);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.msg .body tbody tr:nth-child(even) td {
+  background: color-mix(in oklab, var(--hippo-paper-2) 60%, transparent);
+}
+.msg .body tbody tr:last-child td { border-bottom: 0; }
 .msg .meta {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
@@ -761,7 +816,14 @@ h1.page-title, .page-title {
   line-height: 1.5;
   color: var(--hippo-ink);
   font-family: var(--font-sans);
+  /* No horizontal scroll ever — wrap="soft" is the default, and macOS
+   * was painting an empty track across the bottom. Vertical scrolls
+   * when content passes max-height, but the track is hidden. */
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-width: none;
 }
+.composer-box textarea::-webkit-scrollbar { display: none; }
 .composer-bar {
   display: flex; align-items: center; justify-content: space-between;
   margin-top: 4px;
@@ -792,10 +854,12 @@ h1.page-title, .page-title {
   font-family: var(--font-mono);
   font-size: 11px;
   color: var(--hippo-ink-3);
-  min-height: 1rem;
   margin-top: 8px;
   text-align: right;
 }
+/* Collapse the status line when it has no content so it doesn't
+ * reserve dead space below the composer. */
+.chat-status:empty { display: none; }
 
 /* ═══════════════════════════════════════════════════════════
    MEMORY
@@ -810,6 +874,11 @@ h1.page-title, .page-title {
 .memory-main { min-width: 0; }
 .memory-search-row {
   display: flex; gap: 12px; margin-bottom: 14px; flex-wrap: wrap;
+  /* The search box is 44px tall; the segmented is ~28px. Without
+   * align-items, flex defaults to `stretch` so the segmented gets
+   * padded top+bottom to match 44px and its inner links float
+   * visually off-center. */
+  align-items: center;
 }
 .memory-searchbox {
   flex: 1;

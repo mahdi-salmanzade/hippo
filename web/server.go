@@ -14,6 +14,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/mahdi-salmanzade/hippo"
 )
 
 //go:embed all:templates all:static
@@ -34,6 +36,12 @@ type Server struct {
 
 	bundleMu sync.RWMutex
 	bundle   *BrainBundle
+
+	// builtinTools are the hippo-native tools the server registers on
+	// every Brain build. They hold closures back to s.Bundle() / s.state
+	// so they always resolve against the current bundle — important
+	// because bundles get swapped on /config POST and /policy POST.
+	builtinTools []hippo.Tool
 
 	listener net.Listener
 	srv      *http.Server
@@ -77,13 +85,28 @@ func New(cfg *Config, opts ...Option) (*Server, error) {
 	}
 	s.staticFS = staticFS
 
-	bundle, err := BuildBrain(cfg, s.logger)
+	// Built-in tools capture s via closures; they're safe to construct
+	// before Bundle is assigned since invocation only happens inside
+	// Brain.Stream, by which point s.bundle is populated.
+	s.builtinTools = newBuiltinTools(s.state, s.cfg, s.Bundle)
+
+	bundle, err := BuildBrain(cfg, s.logger, WithExtraTools(s.builtinTools...))
 	if err != nil {
 		s.logger.Warn("web: initial brain build failed; serving config page only", "err", err)
 	} else {
 		s.bundle = bundle
 	}
 	return s, nil
+}
+
+// builtinToolNames reports the names of the server's registered
+// built-in tools. Used by the chat page to show an accurate tool count.
+func (s *Server) builtinToolNames() []string {
+	out := make([]string, 0, len(s.builtinTools))
+	for _, t := range s.builtinTools {
+		out = append(out, t.Name())
+	}
+	return out
 }
 
 // Start binds the listener and serves until ctx is cancelled or

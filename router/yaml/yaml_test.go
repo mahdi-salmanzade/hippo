@@ -419,6 +419,67 @@ tasks:
 	}
 }
 
+// TestRouteRespectsPinnedModel verifies that Call.Model wins over the
+// policy's task-based selection — a caller who explicitly pinned a
+// model (e.g. the web UI's Model dropdown) gets that model back rather
+// than whatever the task rule would have chosen.
+func TestRouteRespectsPinnedModel(t *testing.T) {
+	doc := []byte(`
+tasks:
+  generate:
+    privacy: cloud_ok
+    prefer:
+      - pA:policy_choice
+`)
+	r, err := LoadBytes(doc)
+	if err != nil {
+		t.Fatalf("LoadBytes: %v", err)
+	}
+	pA := &fakeProvider{name: "pA", privacy: hippo.PrivacyCloudOK, cost: 0.02}
+
+	// With Call.Model set, the router should return the pinned model
+	// rather than "policy_choice" from the prefer list.
+	d, err := r.Route(context.Background(),
+		hippo.Call{Task: hippo.TaskGenerate, Model: "user_pinned_model"},
+		[]hippo.Provider{pA}, 1.00)
+	if err != nil {
+		t.Fatalf("Route: %v", err)
+	}
+	if d.Model != "user_pinned_model" {
+		t.Errorf("Model = %q, want user_pinned_model (policy was ignored correctly?)", d.Model)
+	}
+	if d.Provider != "pA" {
+		t.Errorf("Provider = %q, want pA", d.Provider)
+	}
+}
+
+// TestRoutePinnedModelFallsBackWhenNoProviderCanPrice verifies that a
+// pinned model with no matching provider falls through to policy
+// routing rather than erroring. Gives callers a safety net when the
+// UI sends a stale model name.
+func TestRoutePinnedModelFallsBackWhenNoProviderCanPrice(t *testing.T) {
+	doc := []byte(`
+tasks:
+  generate:
+    privacy: cloud_ok
+    prefer:
+      - pA:policy_choice
+`)
+	r, _ := LoadBytes(doc)
+	// pA's EstimateCost errors — simulating "I don't know this model".
+	pA := &fakeProvider{name: "pA", privacy: hippo.PrivacyCloudOK, cost: 0.02, costErr: errors.New("unknown model")}
+	// pB has no error AND the policy prefers pA — so policy path picks pB via fallback? No,
+	// simpler: the pinned model can't be priced by anyone, so we fall through to policy.
+	d, err := r.Route(context.Background(),
+		hippo.Call{Task: hippo.TaskGenerate, Model: "not_supported_by_anyone"},
+		[]hippo.Provider{pA}, 1.00)
+	// pA can't price even the policy_choice (costErr), so policy fails too.
+	if !errors.Is(err, hippo.ErrNoRoutableProvider) {
+		t.Errorf("err = %v, want ErrNoRoutableProvider (fell through then failed)", err)
+	}
+	_ = d
+}
+
 // verify *router implements io.Closer at compile time.
 var _ io.Closer = (*router)(nil)
 

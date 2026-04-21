@@ -279,7 +279,7 @@ func (s *Server) handleConfigPost(w http.ResponseWriter, r *http.Request) {
 	}
 	*s.cfg = updated
 
-	next2, err := BuildBrain(s.cfg, s.logger)
+	next2, err := BuildBrain(s.cfg, s.logger, WithExtraTools(s.builtinTools...))
 	if err != nil {
 		writeFlash(w, "config saved, but brain rebuild failed: "+err.Error(), "")
 		http.Redirect(w, r, "/config", http.StatusSeeOther)

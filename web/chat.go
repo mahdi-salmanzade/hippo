@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/mahdi-salmanzade/hippo"
@@ -41,7 +42,8 @@ func (s *Server) handleChatGet(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 	tasks := []string{"classify", "reason", "generate", "protect"}
-	toolCount := 0
+	// Tool count = built-in hippo tools + every MCP server's tools.
+	toolCount := len(s.builtinTools)
 	hasEmbedder := false
 	if b := s.Bundle(); b != nil {
 		for _, c := range b.MCPClients {
@@ -109,6 +111,20 @@ func (s *Server) handleChatPost(w http.ResponseWriter, r *http.Request) {
 		Task:   req.Task,
 		Prompt: req.Prompt,
 		Model:  req.Model,
+	}
+	// Conversation history: the UI maintains a client-side transcript
+	// and posts it as a JSON array of {role, content} on every turn.
+	// Without this the chat was single-turn — each send got a brand-new
+	// context. With Messages set, hippo.Call appends Prompt as the last
+	// user message so the model sees the full thread.
+	if raw := strings.TrimSpace(r.FormValue("history")); raw != "" && raw != "[]" {
+		var hist []hippo.Message
+		if err := json.Unmarshal([]byte(raw), &hist); err != nil {
+			s.logger.Warn("chat: history json parse failed; continuing without context", "err", err)
+		} else {
+			call.Messages = hist
+			s.logger.Debug("chat: injecting conversation history", "turns", len(hist))
+		}
 	}
 	if req.Memory {
 		call.UseMemory = hippo.MemoryScope{Mode: hippo.MemoryScopeRecent}

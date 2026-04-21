@@ -143,6 +143,8 @@
       msgs.innerHTML = "";
       if (empty) msgs.appendChild(empty);
       if (statusEl) statusEl.textContent = "";
+      transcript = [];
+      currentAssistantText = "";
       if (promptBox) { promptBox.value = ""; updateSendEnabled(); promptBox.focus(); }
     });
   }
@@ -151,9 +153,154 @@
   let activeBody = null;
   let activeMeta = null;
   let activeInflight = false;
+  // Client-side conversation transcript. Sent on every POST /chat so
+  // the model sees the full thread — without this the UI was
+  // effectively single-turn. Cleared by "New chat".
+  let transcript = [];
+  let currentAssistantText = "";
 
   function hideEmpty() {
     if (emptyState && emptyState.parentNode) emptyState.remove();
+  }
+
+  // ── minimal markdown renderer ───────────────────────────────────
+  // Handles the subset LLMs actually produce: fenced code blocks,
+  // headings, `- ` / `* ` / `1. ` lists, **bold**, *italic*, `inline
+  // code`, paragraphs. Builds a DocumentFragment of real DOM nodes —
+  // no innerHTML with untrusted content, so the attack surface is
+  // zero. Called once on stream-done; streaming path stays plain text.
+  function renderMarkdown(text) {
+    const root = document.createDocumentFragment();
+    // Split on fenced blocks first so their contents aren't touched by
+    // inline parsing. Capture groups: 0/3/6... = text around, 1/4/7 =
+    // optional language, 2/5/8 = code body.
+    const parts = text.split(/```([\w-]*)\n?([\s\S]*?)```/g);
+    for (let i = 0; i < parts.length; i++) {
+      if (i % 3 === 0) {
+        renderMdTextBlock(root, parts[i]);
+      } else if (i % 3 === 2) {
+        const pre = document.createElement("pre");
+        pre.className = "mono";
+        pre.textContent = parts[i].replace(/\n$/, "");
+        root.appendChild(pre);
+      }
+    }
+    return root;
+  }
+  function renderMdTextBlock(root, text) {
+    const lines = text.split("\n");
+    let i = 0;
+    while (i < lines.length) {
+      const line = lines[i];
+      const h = /^(#{1,6})\s+(.*)$/.exec(line);
+      if (h) {
+        const el = document.createElement("h" + Math.min(h[1].length, 6));
+        renderMdInline(el, h[2]);
+        root.appendChild(el);
+        i++;
+        continue;
+      }
+      if (/^[-*]\s+/.test(line)) {
+        const ul = document.createElement("ul");
+        while (i < lines.length && /^[-*]\s+/.test(lines[i])) {
+          const li = document.createElement("li");
+          renderMdInline(li, lines[i].replace(/^[-*]\s+/, ""));
+          ul.appendChild(li);
+          i++;
+        }
+        root.appendChild(ul);
+        continue;
+      }
+      if (/^\d+\.\s+/.test(line)) {
+        const ol = document.createElement("ol");
+        while (i < lines.length && /^\d+\.\s+/.test(lines[i])) {
+          const li = document.createElement("li");
+          renderMdInline(li, lines[i].replace(/^\d+\.\s+/, ""));
+          ol.appendChild(li);
+          i++;
+        }
+        root.appendChild(ol);
+        continue;
+      }
+      // GitHub-flavored table: header row, separator row (|---|---|),
+      // then body rows. Each row is a pipe-separated string.
+      if (isTableHeader(lines, i)) {
+        const tbl = document.createElement("table");
+        const thead = document.createElement("thead");
+        const tr = document.createElement("tr");
+        splitTableRow(lines[i]).forEach(function (cell) {
+          const th = document.createElement("th");
+          renderMdInline(th, cell);
+          tr.appendChild(th);
+        });
+        thead.appendChild(tr);
+        tbl.appendChild(thead);
+        i += 2; // skip header + separator
+        const tbody = document.createElement("tbody");
+        while (i < lines.length && /\|/.test(lines[i]) && lines[i].trim() !== "") {
+          const row = document.createElement("tr");
+          splitTableRow(lines[i]).forEach(function (cell) {
+            const td = document.createElement("td");
+            renderMdInline(td, cell);
+            row.appendChild(td);
+          });
+          tbody.appendChild(row);
+          i++;
+        }
+        tbl.appendChild(tbody);
+        root.appendChild(tbl);
+        continue;
+      }
+      if (line.trim() === "") { i++; continue; }
+      // Paragraph: gather run of non-blank, non-structural lines.
+      const paraLines = [];
+      while (i < lines.length &&
+             lines[i].trim() !== "" &&
+             !/^[-*]\s+/.test(lines[i]) &&
+             !/^\d+\.\s+/.test(lines[i]) &&
+             !/^#{1,6}\s+/.test(lines[i])) {
+        paraLines.push(lines[i]);
+        i++;
+      }
+      const p = document.createElement("p");
+      renderMdInline(p, paraLines.join("\n"));
+      root.appendChild(p);
+    }
+  }
+  function isTableHeader(lines, i) {
+    // Need a header line with pipes AND a separator line right below it
+    // that's made of dashes/pipes/colons (GFM: |---|:---:|---:|).
+    const head = lines[i];
+    const sep = lines[i + 1];
+    if (!head || !sep) return false;
+    if (!/\|/.test(head)) return false;
+    const sepTrim = sep.trim();
+    if (!/^\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?$/.test(sepTrim)) return false;
+    return true;
+  }
+  function splitTableRow(line) {
+    // Strip optional leading/trailing pipes, then split on |.
+    return line.replace(/^\s*\|/, "").replace(/\|\s*$/, "").split("|").map(function (s) {
+      return s.trim();
+    });
+  }
+
+  function renderMdInline(el, text) {
+    // Order matters: `code` before **bold** before *italic* so the
+    // regex doesn't chew into code contents.
+    const re = /(`[^`\n]+`|\*\*[^*\n]+\*\*|\*[^*\n]+\*)/g;
+    let last = 0, m;
+    while ((m = re.exec(text)) !== null) {
+      if (m.index > last) el.appendChild(document.createTextNode(text.slice(last, m.index)));
+      const token = m[0];
+      let node;
+      if (token.startsWith("`"))       { node = document.createElement("code"); node.textContent = token.slice(1, -1); }
+      else if (token.startsWith("**")) { node = document.createElement("strong"); node.textContent = token.slice(2, -2); }
+      else                              { node = document.createElement("em"); node.textContent = token.slice(1, -1); }
+      el.appendChild(node);
+      last = m.index + token.length;
+    }
+    if (last < text.length) el.appendChild(document.createTextNode(text.slice(last)));
   }
 
   function makeAvatar() {
@@ -234,6 +381,7 @@
     const pair = appendMsg("assistant", "");
     activeBody = pair.body;
     activeMeta = pair.meta;
+    currentAssistantText = "";
 
     const pulse = document.createElement("span");
     pulse.className = "dot-pulse";
@@ -252,7 +400,11 @@
       task: taskSel ? taskSel.value : "generate",
       memory: memChk && memChk.checked ? "on" : "",
       tools: toolsChk && toolsChk.checked ? "on" : "",
+      history: JSON.stringify(transcript),
     });
+    // Append the user turn to the transcript now — the assistant turn
+    // is appended when streaming completes (in the "done" handler).
+    transcript.push({ role: "user", content: prompt });
 
     fetch("/chat", { method: "POST", body: body })
       .then(function (r) {
@@ -280,6 +432,7 @@
         if (pulse) pulse.remove();
         firstDelta = false;
       }
+      currentAssistantText += e.data;
       activeBody.appendChild(document.createTextNode(e.data));
       msgs.scrollTop = msgs.scrollHeight;
     });
@@ -316,6 +469,22 @@
     });
     activeStream.addEventListener("done", function () {
       if (activeStream) { activeStream.close(); activeStream = null; }
+      // Replace the streamed plain text with rendered markdown now
+      // that the full response is in hand. Streaming raw text then
+      // snapping to formatted HTML at the end keeps the delta loop
+      // cheap (no re-parse per chunk) while still giving the user
+      // bolding, lists, headings, and code blocks.
+      if (activeBody && currentAssistantText) {
+        while (activeBody.firstChild) activeBody.removeChild(activeBody.firstChild);
+        activeBody.appendChild(renderMarkdown(currentAssistantText));
+      }
+      // Commit the assistant turn to the transcript so the next send
+      // carries the full thread. Empty responses (cancelled streams)
+      // aren't worth recording.
+      if (currentAssistantText) {
+        transcript.push({ role: "assistant", content: currentAssistantText });
+      }
+      currentAssistantText = "";
       activeInflight = false;
       updateSendEnabled();
     });

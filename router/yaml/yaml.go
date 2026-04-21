@@ -261,6 +261,26 @@ func (r *router) checkAndReload() {
 func (r *router) Route(ctx context.Context, c hippo.Call, providers []hippo.Provider, budget float64) (hippo.Decision, error) {
 	_ = ctx // reserved for cancellation checks when Route grows more work
 
+	// Explicit model pin wins over policy. A caller that set Call.Model
+	// (e.g. the web UI's Model dropdown) wants *that* model, not
+	// whatever the task rule would select. We pick the first registered
+	// provider that can price it; if none can, we fall through to
+	// normal policy routing so the caller still gets a usable decision.
+	if c.Model != "" {
+		for _, p := range providers {
+			if _, err := p.EstimateCost(c); err != nil {
+				continue
+			}
+			cost, _ := p.EstimateCost(c)
+			return hippo.Decision{
+				Provider:         p.Name(),
+				Model:            c.Model,
+				EstimatedCostUSD: cost,
+				Reason:           "pinned model: " + c.Model,
+			}, nil
+		}
+	}
+
 	pol := r.policy.Load()
 	if pol == nil {
 		return hippo.Decision{}, hippo.ErrNoRoutableProvider

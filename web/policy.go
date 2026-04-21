@@ -85,7 +85,7 @@ func (s *Server) handlePolicyPost(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Hot-swap: rebuild the brain with the new policy in place.
-	next, err := BuildBrain(s.cfg, s.logger)
+	next, err := BuildBrain(s.cfg, s.logger, WithExtraTools(s.builtinTools...))
 	if err != nil {
 		writeFlash(w, "", "policy saved, rebuild failed: "+err.Error())
 		http.Redirect(w, r, "/policy", http.StatusSeeOther)
