@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/mahdi-salmanzade/hippo"
@@ -50,16 +51,18 @@ type spendTool struct {
 
 func (t *spendTool) Name() string { return "hippo_spend" }
 func (t *spendTool) Description() string {
-	return "Returns the user's LLM spend summary. Fields:\n" +
+	return "Returns the user's LLM spend summary. Use this whenever the user " +
+		"asks about cost, spend, budget, or how much they've used. Data is " +
+		"local — nothing leaves the user's machine.\n\n" +
+		"Fields:\n" +
+		"- summary: a pre-formatted one-paragraph answer. PRESENT THIS TO THE " +
+		"USER directly (optionally paraphrased into your voice); do not " +
+		"contradict it with a different headline number.\n" +
 		"- completed_usd, completed_calls: totals over finished turns\n" +
-		"- pending_calls: turns currently in flight (including this one)\n" +
+		"- pending_calls: turns currently in flight (including this one). " +
+		"Must be acknowledged when > 0 — don't pretend pending turns cost $0.\n" +
 		"- by_provider, by_task, by_model: breakdowns across completed turns\n" +
-		"- budget.spent_usd / budget.remaining_usd: daily budget status\n" +
-		"Use this whenever the user asks about cost, spend, budget, or how " +
-		"much they've used. Data is local — nothing leaves the user's machine. " +
-		"When pending_calls > 0, tell the user how many turns are still " +
-		"completing and that their cost will be reflected once they finish — " +
-		"don't pretend the pending turns have zero cost."
+		"- budget.spent_usd / budget.remaining_usd: daily budget status"
 }
 func (t *spendTool) Schema() json.RawMessage {
 	return json.RawMessage(`{"type":"object","properties":{},"additionalProperties":false}`)
@@ -69,25 +72,70 @@ func (t *spendTool) Execute(ctx context.Context, args json.RawMessage) (hippo.To
 	// about the current tool-calling turn instead of either
 	// undercounting (ignoring the pending row) or overcounting
 	// (treating a $0 placeholder as real spend).
+	completed := t.state.CompletedCount()
+	pending := t.state.PendingCount()
+	total := t.state.TotalSpend()
+
 	out := map[string]any{
-		"completed_usd":   t.state.TotalSpend(),
-		"completed_calls": t.state.CompletedCount(),
-		"pending_calls":   t.state.PendingCount(),
+		"completed_usd":   total,
+		"completed_calls": completed,
+		"pending_calls":   pending,
 		"by_provider":     t.state.SpendByProvider(),
 		"by_task":         t.state.SpendByTask(),
 		"by_model":        t.state.SpendByModel(),
 	}
+	var budgetSpent, budgetRemain float64
+	var haveBudget bool
 	if b := t.bundle(); b != nil && b.Budget != nil {
+		budgetSpent = b.Budget.Spent()
+		budgetRemain = b.Budget.Remaining()
+		haveBudget = true
 		out["budget"] = map[string]any{
-			"spent_usd":     b.Budget.Spent(),
-			"remaining_usd": b.Budget.Remaining(),
+			"spent_usd":     budgetSpent,
+			"remaining_usd": budgetRemain,
 		}
 	}
+
+	// Pre-formatted summary the model is instructed (via Description)
+	// to quote or paraphrase. Removes the non-determinism of Opus
+	// sometimes burying the "1 pending" line — the data is already
+	// assembled into a single readable sentence.
+	summary := formatSpendSummary(total, completed, pending, budgetSpent, budgetRemain, haveBudget)
+	out["summary"] = summary
+
 	buf, err := json.MarshalIndent(out, "", "  ")
 	if err != nil {
 		return hippo.ToolResult{Content: err.Error(), IsError: true}, nil
 	}
 	return hippo.ToolResult{Content: string(buf)}, nil
+}
+
+// formatSpendSummary produces a human-readable one-paragraph summary
+// of the current spend. The model (see Description) is told to
+// present this faithfully — keeps answers consistent across turns.
+func formatSpendSummary(completedUSD float64, completedCalls, pendingCalls int, budgetSpent, budgetRemain float64, haveBudget bool) string {
+	var sb strings.Builder
+	if completedCalls == 0 {
+		sb.WriteString("No completed LLM calls yet today — $0.00 billable spend so far.")
+	} else {
+		fmt.Fprintf(&sb, "Completed: %d call", completedCalls)
+		if completedCalls != 1 {
+			sb.WriteString("s")
+		}
+		fmt.Fprintf(&sb, " totaling $%.6f.", completedUSD)
+	}
+	if pendingCalls > 0 {
+		sb.WriteString(" ")
+		if pendingCalls == 1 {
+			sb.WriteString("1 turn is currently in flight (this request); its cost will be added once it finishes.")
+		} else {
+			fmt.Fprintf(&sb, "%d turns are currently in flight; their cost will be added as they finish.", pendingCalls)
+		}
+	}
+	if haveBudget {
+		fmt.Fprintf(&sb, " Daily budget: $%.2f spent, $%.2f remaining.", budgetSpent, budgetRemain)
+	}
+	return sb.String()
 }
 
 // ── hippo_memory_search ─────────────────────────────────────────────

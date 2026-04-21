@@ -67,6 +67,27 @@ func TestSpendToolExposesPendingCalls(t *testing.T) {
 	if total, _ := parsed["completed_usd"].(float64); total < 0.0049 || total > 0.0051 {
 		t.Errorf("completed_usd = %v; want ~0.005 (pending row must not inflate totals)", parsed["completed_usd"])
 	}
+	// The summary must mention the pending turn explicitly — that's
+	// the whole point of pre-formatting it. If the string doesn't say
+	// "in flight" the model will skip it half the time.
+	summary, _ := parsed["summary"].(string)
+	if !strings.Contains(summary, "in flight") {
+		t.Errorf("summary missing 'in flight' note:\n%s", summary)
+	}
+	if !strings.Contains(summary, "0.005") {
+		t.Errorf("summary missing completed total:\n%s", summary)
+	}
+}
+
+func TestSpendToolSummaryEmptyState(t *testing.T) {
+	tool := &spendTool{state: NewState(), bundle: func() *BrainBundle { return nil }}
+	res, _ := tool.Execute(context.Background(), json.RawMessage(`{}`))
+	var parsed map[string]any
+	_ = json.Unmarshal([]byte(res.Content), &parsed)
+	summary, _ := parsed["summary"].(string)
+	if !strings.Contains(summary, "No completed") {
+		t.Errorf("empty-state summary should say 'No completed…'; got:\n%s", summary)
+	}
 }
 
 func TestMemorySearchToolWithoutMemory(t *testing.T) {
