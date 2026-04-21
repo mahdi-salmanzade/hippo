@@ -14,7 +14,7 @@ const defaultModel = "claude-opus-4-7"
 //
 // Rates live in budget/pricing.yaml (the canonical source); this
 // catalogue holds the provider-specific metadata that pricing doesn't
-// cover — display names, per-model max output tokens, and capability
+// cover - display names, per-model max output tokens, and capability
 // flags. The entries here must stay aligned with the Anthropic entries
 // in budget/pricing.yaml so Models() and EstimateCost() describe the
 // same set of models.

@@ -64,7 +64,7 @@ providers:
         supports_reasoning: true
 
   ollama:
-    # Local inference — free by definition. zero_cost tells
+    # Local inference - free by definition. zero_cost tells
     # budget.Lookup to return (ModelPricing{}, true) for any model id,
     # registered or not, so users running a locally-pulled model we
     # haven't catalogued here don't get a "price unknown" warning on

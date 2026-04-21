@@ -33,7 +33,7 @@
         <div class="provider-key-row">
           <div class="input">
             <input type="password" id="{{.Name}}_api_key" name="{{.Name}}_api_key"
-                   placeholder='{{if .APIKeySet}}[already set — leave blank to keep, "__clear__" to remove]{{else}}paste key{{end}}'
+                   placeholder='{{if .APIKeySet}}[already set - leave blank to keep, "__clear__" to remove]{{else}}paste key{{end}}'
                    autocomplete="off">
             <button type="button" class="toggle-visibility" data-toggle-visibility="#{{.Name}}_api_key" aria-label="Show key" aria-pressed="false">
               <span class="eye-on">{{template "icon_eye"}}</span>
@@ -67,8 +67,8 @@
       </label>
 
       <div class="provider-card-foot">
-        <span>Key <span class="mono">{{if .APIKeySet}}set{{else}}—{{end}}</span></span>
-        <span>Default <span class="mono">{{if .DefaultModel}}{{.DefaultModel}}{{else}}—{{end}}</span></span>
+        <span>Key <span class="mono">{{if .APIKeySet}}set{{else}}-{{end}}</span></span>
+        <span>Default <span class="mono">{{if .DefaultModel}}{{.DefaultModel}}{{else}}-{{end}}</span></span>
       </div>
     </section>
     {{end}}
@@ -91,7 +91,7 @@
         </div>
         <div style="font-size: 12px; color: var(--hippo-ink-2);">
           default route:
-          <span class="mono" style="font-weight: 500; color: var(--hippo-ink);">{{if .Data.DefaultRoute}}{{.Data.DefaultRoute}}{{else}}—{{end}}</span>
+          <span class="mono" style="font-weight: 500; color: var(--hippo-ink);">{{if .Data.DefaultRoute}}{{.Data.DefaultRoute}}{{else}}-{{end}}</span>
         </div>
       </div>
       <div class="tail">

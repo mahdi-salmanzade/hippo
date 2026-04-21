@@ -2,7 +2,7 @@ name: Integration
 
 # Integration tests hit real LLM provider APIs, so they cost real money
 # (a fraction of a cent per run, but non-zero) and require API keys.
-# They run only on manual trigger or on a nightly schedule — never on
+# They run only on manual trigger or on a nightly schedule - never on
 # every push. The default CI workflow skips them because
 # HIPPO_RUN_INTEGRATION is unset there.
 

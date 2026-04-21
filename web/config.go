@@ -22,7 +22,7 @@ import (
 //
 // Comment preservation: Save strips inline comments and regenerates a
 // fixed header block on every write (see configHeader). Users who edit
-// by hand get their annotations rewritten — a known limitation, flagged
+// by hand get their annotations rewritten - a known limitation, flagged
 // in QUESTIONS.md. The trade-off is one round-trip through yaml.v3's
 // shape-only marshaller rather than the Node-tree-rewriting path.
 type Config struct {

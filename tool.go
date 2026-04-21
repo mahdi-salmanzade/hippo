@@ -11,7 +11,7 @@ import (
 // Tool is a capability the LLM can invoke. hippo provides the
 // contract; consumers provide the implementation. Tools are
 // registered at Brain construction via WithTools and are immutable
-// for the Brain's lifetime — there is no registry mutation API on
+// for the Brain's lifetime - there is no registry mutation API on
 // purpose, so the set of capabilities a Brain exposes is a
 // declarative part of its configuration rather than runtime state.
 //
@@ -35,7 +35,7 @@ type Tool interface {
 	Name() string
 
 	// Description is shown to the LLM. It should explain what the
-	// tool does, when to use it, and any important caveats — treat
+	// tool does, when to use it, and any important caveats - treat
 	// this as prompt-engineering surface, it materially affects how
 	// often and how correctly the tool is called.
 	Description() string
@@ -52,8 +52,8 @@ type Tool interface {
 	// shape; hippo does not re-validate before calling Execute).
 	//
 	// Return (ToolResult{Content, IsError: false}, nil) for normal
-	// success. For expected failures — "file not found", "API rate
-	// limited", etc. — return (ToolResult{Content: <message>,
+	// success. For expected failures - "file not found", "API rate
+	// limited", etc. - return (ToolResult{Content: <message>,
 	// IsError: true}, nil) so the LLM sees the failure and can
 	// decide how to recover.
 	//
@@ -73,7 +73,7 @@ type Tool interface {
 type ToolResult struct {
 	// Content is the tool's output, shown to the LLM verbatim. Plain
 	// text or JSON-as-string both work; providers render them
-	// identically. Keep it short when you can — every byte is an
+	// identically. Keep it short when you can - every byte is an
 	// input token on the next provider turn.
 	Content string
 
@@ -93,7 +93,7 @@ type ToolResult struct {
 
 // ToolSet is hippo's internal tool registry, populated once at
 // startup via WithTools. It is exported as a concrete type (rather
-// than an interface) because hippo owns the shape — there is no
+// than an interface) because hippo owns the shape - there is no
 // good reason to plug in a different registry, and exposing only
 // read methods keeps the "registered at New, immutable thereafter"
 // contract visible at the type level.
@@ -110,7 +110,7 @@ var nameRE = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]{0,63}$`)
 
 // NewToolSet constructs a ToolSet from a slice of tools. Returns an
 // error if any tool has an invalid name or if two tools share a
-// name — both are configuration bugs we'd rather catch at startup
+// name - both are configuration bugs we'd rather catch at startup
 // than at the first Call that tries to dispatch them.
 func NewToolSet(tools ...Tool) (*ToolSet, error) {
 	ts := &ToolSet{tools: make(map[string]Tool, len(tools))}

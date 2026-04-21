@@ -29,7 +29,7 @@ HIPPO_RUN_INTEGRATION=1 \
 ```
 
 The MCP `stdio` integration test (`TestStdioIntegrationEchoServer`)
-runs unconditionally — it builds `examples/mcp/echo_server` into a
+runs unconditionally - it builds `examples/mcp/echo_server` into a
 temp binary and drives it over stdin/stdout, so there's no external
 dependency.
 
@@ -41,8 +41,8 @@ matrix.
 
 hippo was built in ten passes over 48 hours in April 2026. Every pass
 added one layer (provider, memory, router, streaming, tools, web UI,
-MCP). The design decisions from each pass — alternatives considered,
-why one was picked — are recorded in [QUESTIONS.md](../QUESTIONS.md).
+MCP). The design decisions from each pass - alternatives considered,
+why one was picked - are recorded in [QUESTIONS.md](../QUESTIONS.md).
 Read it before proposing an architectural change; the same ground has
 probably been walked.
 
@@ -50,7 +50,7 @@ probably been walked.
 
 - **Go 1.23+ only.** No build tags for older toolchains.
 - **CGO_ENABLED=0.** Every PR must build and test with CGO disabled.
-  If your change needs a C library, open an issue first — the answer
+  If your change needs a C library, open an issue first - the answer
   is usually "find a pure-Go alternative or don't do it."
 - **Minimal dependencies.** Currently allowed third-party deps are
   `modernc.org/sqlite` and `gopkg.in/yaml.v3`. Adding a new one
@@ -60,7 +60,7 @@ probably been walked.
 - **Idiomatic Go.** Functional options, interfaces over structs for
   plug points, errors as values with typed sentinels,
   `context.Context` as the first argument on public methods, channels
-  for streaming — not callbacks.
+  for streaming - not callbacks.
 
 ## PR checklist
 
@@ -74,7 +74,7 @@ Before opening a PR, please confirm:
       the CLI or the web UI.
 - [ ] Binary size stayed under 22 MB
       (`CGO_ENABLED=0 go build ./cmd/hippo && ls -lh hippo`).
-- [ ] No new dependencies — or if there are, the PR description
+- [ ] No new dependencies - or if there are, the PR description
       explains why stdlib wouldn't work.
 - [ ] Public-API changes are reflected in godoc comments in the same
       commit as the code.

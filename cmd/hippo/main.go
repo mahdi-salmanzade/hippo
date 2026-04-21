@@ -6,7 +6,7 @@
 //	hippo version   print version + build info
 //	hippo init      create ~/.hippo/config.yaml with defaults
 //
-// Flags are parsed with stdlib flag — no cobra dependency. hippo's CLI
+// Flags are parsed with stdlib flag - no cobra dependency. hippo's CLI
 // surface is intentionally minimal and Pass 9 is the first pass that
 // actually ships a usable binary.
 package main
@@ -45,7 +45,7 @@ func main() {
 }
 
 func printUsage(w *os.File) {
-	fmt.Fprintln(w, `hippo — embedded LLM client with memory and a web UI
+	fmt.Fprintln(w, `hippo - embedded LLM client with memory and a web UI
 
 Usage:
   hippo <subcommand> [flags]

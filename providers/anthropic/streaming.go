@@ -53,7 +53,7 @@ func (p *provider) stream(ctx context.Context, c hippo.Call) (<-chan hippo.Strea
 
 // openStream POSTs to /v1/messages with stream:true, retrying 429 /
 // 5xx responses with the same exponential backoff as doWithRetry. On
-// success the returned *http.Response has its Body still open — the
+// success the returned *http.Response has its Body still open - the
 // caller owns closing it.
 //
 // This is a sibling of doWithRetry rather than a shared helper because
@@ -104,8 +104,8 @@ func (p *provider) openStream(ctx context.Context, reqBody []byte) (*http.Respon
 		}
 		return httpResp, nil
 	}
-	// Unreachable in practice — the final attempt always returns from
-	// inside the loop — but the compiler wants a path out.
+	// Unreachable in practice - the final attempt always returns from
+	// inside the loop - but the compiler wants a path out.
 	return lastResp, nil
 }
 
@@ -136,7 +136,7 @@ type streamUsage struct {
 // hippo.StreamChunk, and writes them to out. Always closes out; always
 // closes the http body. Terminal: either StreamChunkUsage (message_stop)
 // or StreamChunkError (wire error). Context cancellation closes the
-// channel without a StreamChunkError — the caller triggered it and
+// channel without a StreamChunkError - the caller triggered it and
 // already knows.
 func (p *provider) readStream(ctx context.Context, httpResp *http.Response, out chan<- hippo.StreamChunk) {
 	defer close(out)
@@ -172,7 +172,7 @@ func (p *provider) readStream(ctx context.Context, httpResp *http.Response, out 
 		ev, err := scanner.Next(ctx)
 		if err != nil {
 			if err == io.EOF {
-				// Clean EOF without a message_stop — rare, but emit a
+				// Clean EOF without a message_stop - rare, but emit a
 				// usage chunk from whatever we accumulated rather than
 				// leave the caller uncertain.
 				emit(buildUsageChunk(usage))
@@ -209,7 +209,7 @@ func handleAnthropicEvent(
 	emit func(hippo.StreamChunk) bool,
 ) (terminal bool, err error) {
 	// Anthropic also populates the JSON body's "type" field, which
-	// always matches the SSE event: field. Prefer the SSE field — it's
+	// always matches the SSE event: field. Prefer the SSE field - it's
 	// cheaper than parsing JSON just to switch.
 	switch ev.Event {
 	case "ping", "":
@@ -310,7 +310,7 @@ func handleAnthropicEvent(
 		delete(accumulators, payload.Index)
 		args := acc.argsBuf.Bytes()
 		if len(args) == 0 {
-			// Tool call with no input — emit an empty JSON object
+			// Tool call with no input - emit an empty JSON object
 			// rather than leaving Arguments nil so consumers that
 			// json.Unmarshal unconditionally don't blow up.
 			args = []byte("{}")

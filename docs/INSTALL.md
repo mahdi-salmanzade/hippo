@@ -67,12 +67,12 @@ up.
    ```
 
 2. Start it: `ollama serve` (runs on `http://localhost:11434`).
-3. Pull a model: `ollama pull llama3.3:70b` (or a smaller one — see
+3. Pull a model: `ollama pull llama3.3:70b` (or a smaller one - see
    [ollama.com/library](https://ollama.com/library)).
 4. In the hippo UI, enable the Ollama card. The Base URL defaults to
    `http://localhost:11434`.
 
-Ollama inference is free for hippo's budget tracker — the pricing table
+Ollama inference is free for hippo's budget tracker - the pricing table
 marks it `zero_cost`.
 
 ## MCP servers (optional)
@@ -89,14 +89,14 @@ before saving.
 
 ## Troubleshooting
 
-**"port 7844 already in use"** — Another process holds the port. Either
+**"port 7844 already in use"** - Another process holds the port. Either
 stop it or start hippo on a different port:
 
 ```bash
 hippo serve --addr 127.0.0.1:7745
 ```
 
-**"permission denied on ~/.hippo"** — The directory is created with
+**"permission denied on ~/.hippo"** - The directory is created with
 mode 0700 on first init. If it was created by a different user (say,
 `sudo hippo init`), chown it back:
 
@@ -104,20 +104,20 @@ mode 0700 on first init. If it was created by a different user (say,
 sudo chown -R "$USER" ~/.hippo
 ```
 
-**"auth token required for non-localhost bind"** — Deliberate: binding
+**"auth token required for non-localhost bind"** - Deliberate: binding
 to `0.0.0.0` or a real interface without a token would expose your API
 keys to the network. Set `server.auth_token` in the config, or pass
 `--auth-token <secret>`.
 
-**"ollama: no route to host"** — The daemon isn't running. Start it with
+**"ollama: no route to host"** - The daemon isn't running. Start it with
 `ollama serve` and confirm `curl http://localhost:11434/api/version`
 replies.
 
-**"mcp: initialize: context deadline exceeded"** — The MCP server took
+**"mcp: initialize: context deadline exceeded"** - The MCP server took
 more than 15s to respond to its first request. Either the command line
 is wrong, or the server is broken. Check the command runs standalone;
 `stderr` output appears in hippo's logs at `--log-level debug`.
 
-**"staticcheck / vet errors on Go 1.25"** — hippo pins deps that
+**"staticcheck / vet errors on Go 1.25"** - hippo pins deps that
 compile on Go 1.23+. If you're on a newer toolchain the test suite
 should pass anyway; the pin exists so the CI matrix stays green.

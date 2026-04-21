@@ -51,7 +51,7 @@ type store struct {
 	workersMu sync.Mutex
 	workers   []func()
 
-	// Backfill status mirror — written by the backfill worker, read
+	// Backfill status mirror - written by the backfill worker, read
 	// by BackfillStatus. The atomic flag lets the web UI poll without
 	// contending with the worker; the remaining fields use the mutex.
 	lastBackfillRunning atomic.Bool
@@ -103,7 +103,7 @@ func WithEmbedder(e hippo.Embedder) Option {
 
 // Open creates or opens a SQLite-backed memory store at the given path.
 //
-// Pass ":memory:" for an in-memory store — useful for tests. Note that
+// Pass ":memory:" for an in-memory store - useful for tests. Note that
 // with the pure-Go modernc.org/sqlite driver, ":memory:" gives each
 // database/sql connection its own independent in-memory database; a
 // write on connection A is invisible to a read on connection B. Open
@@ -354,7 +354,7 @@ func (s *store) Recall(ctx context.Context, query string, q hippo.MemoryQuery) (
 	case wantSemantic && trimmed != "":
 		records, err = s.recallHybrid(ctx, trimmed, q)
 	case wantSemantic:
-		// Semantic requested without a text to embed — fall back to
+		// Semantic requested without a text to embed - fall back to
 		// recency ordered by decayed importance. Still honours filters.
 		records, err = s.recallRecency(ctx, q)
 	case trimmed != "":
@@ -436,7 +436,7 @@ func (s *store) loadTags(ctx context.Context, records []hippo.Record) error {
 // string. Each whitespace-separated token is wrapped as a phrase
 // (double quotes escaped by doubling per FTS5 quoting rules) and the
 // phrases are OR-joined so multi-word queries recall any matching
-// token rather than requiring every one — bm25() still ranks the
+// token rather than requiring every one - bm25() still ranks the
 // overlapping matches above partial ones, so "the best hit wins"
 // holds. The quoting also sanitises FTS5 operators (NOT, NEAR, column
 // filters) so user input can't reshape the query.
@@ -462,7 +462,7 @@ func buildFTSQuery(query string) string {
 // hippo.Memory.
 //
 // Only rows with kind='working' are removed. Episodic and Profile
-// records are the ground-truth layer and are never auto-deleted —
+// records are the ground-truth layer and are never auto-deleted -
 // Prune is intentionally conservative. Applications that want to
 // age-out episodic or profile data should issue that DELETE
 // themselves.
@@ -487,7 +487,7 @@ func (s *store) Prune(ctx context.Context, before time.Time) error {
 
 // DeleteByID removes one record and its tag rows. The FTS5 trigger
 // cleans up the search-index entry automatically, and the tag table's
-// ON DELETE CASCADE handles the join table. Missing IDs return nil —
+// ON DELETE CASCADE handles the join table. Missing IDs return nil -
 // the caller's view is "the row isn't here" either way.
 func (s *store) DeleteByID(ctx context.Context, id string) error {
 	if id == "" {

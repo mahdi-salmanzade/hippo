@@ -20,7 +20,7 @@ type migration struct {
 }
 
 // migrations is the canonical ordered list. Version numbers are
-// contiguous starting at 1 — the runner asserts this to catch accidental
+// contiguous starting at 1 - the runner asserts this to catch accidental
 // out-of-order inserts during development.
 var migrations = []migration{
 	{
@@ -80,11 +80,11 @@ END;
 `
 
 // embeddingColumnsSQL is the Pass 11 migration. Adds:
-//   - embedding (BLOB, nullable) — packed little-endian float32 vectors.
-//   - embedding_model (TEXT, nullable) — whose name produced them.
-//   - embedded_at (INTEGER, nullable) — unix-nanoseconds timestamp.
-//   - last_accessed (INTEGER, nullable) — ditto, for decay.
-//   - access_count (INTEGER, default 0) — for the decay boost term.
+//   - embedding (BLOB, nullable) - packed little-endian float32 vectors.
+//   - embedding_model (TEXT, nullable) - whose name produced them.
+//   - embedded_at (INTEGER, nullable) - unix-nanoseconds timestamp.
+//   - last_accessed (INTEGER, nullable) - ditto, for decay.
+//   - access_count (INTEGER, default 0) - for the decay boost term.
 //
 // SQLite's ALTER TABLE ADD COLUMN is safe against a STRICT table as
 // long as the new column either has no constraints or defaults to a
@@ -144,7 +144,7 @@ func migrate(ctx context.Context, db *sql.DB) error {
 }
 
 // currentSchemaVersion reads the MAX(version) from schema_version.
-// Returns 0 on an empty table — either fresh or legacy.
+// Returns 0 on an empty table - either fresh or legacy.
 func currentSchemaVersion(ctx context.Context, db *sql.DB) (int, error) {
 	var v sql.NullInt64
 	if err := db.QueryRowContext(ctx, `SELECT MAX(version) FROM schema_version`).Scan(&v); err != nil {
@@ -168,7 +168,7 @@ func reconcileV1Legacy(ctx context.Context, db *sql.DB) (int, error) {
 		return 0, fmt.Errorf("memory/sqlite: detect legacy: %w", err)
 	}
 	if exists == 0 {
-		// Fresh database — nothing to reconcile.
+		// Fresh database - nothing to reconcile.
 		return 0, nil
 	}
 	// Legacy db. Run the version-1 DDL anyway (all CREATE IF NOT

@@ -19,7 +19,7 @@ import (
 // this slightly differently (Anthropic: top-level "system" field;
 // OpenAI/Ollama: a system-role entry in the messages array is native;
 // Gemini: "systemInstruction" top-level field; Cohere: "preamble"
-// parameter) — the translation is a ~10-line switch inside each
+// parameter) - the translation is a ~10-line switch inside each
 // adapter.
 //
 // This matters because hippo.Brain's memory-hydration path injects
@@ -53,7 +53,7 @@ type Provider interface {
 // vectors for semantic memory retrieval; callers that want to use a
 // Brain without semantic memory never need to construct one.
 //
-// All implementations must be safe for concurrent use — backfill and
+// All implementations must be safe for concurrent use - backfill and
 // on-demand recall embedding may call the same Embedder from different
 // goroutines.
 type Embedder interface {
@@ -98,7 +98,7 @@ type Memory interface {
 // should serve a given Call.
 //
 // Implementations live in hippo/router and must be safe for concurrent
-// use. Route must not perform network I/O — it is called on every
+// use. Route must not perform network I/O - it is called on every
 // dispatch and must stay cheap.
 //
 // The providers slice is the Brain's registered provider list, passed
@@ -118,7 +118,7 @@ type Router interface {
 //
 // The unit of accounting is (provider, model, Usage): the tracker
 // owns the pricing table that turns a token count into a USD figure.
-// That keeps provider code from duplicating price math (eventually —
+// That keeps provider code from duplicating price math (eventually -
 // see the Pass 5 consolidation note in providers/anthropic/pricing.go).
 type BudgetTracker interface {
 	// EstimateCost returns the USD cost of the given Usage against

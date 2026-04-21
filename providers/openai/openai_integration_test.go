@@ -15,9 +15,9 @@ import (
 // path end-to-end.
 //
 // Two gates, both required:
-//   - HIPPO_RUN_INTEGRATION=1 — explicit opt-in. Prevents accidental
+//   - HIPPO_RUN_INTEGRATION=1 - explicit opt-in. Prevents accidental
 //     network calls during routine `go test ./...` runs.
-//   - OPENAI_API_KEY — set via .env (auto-loaded below) or the process
+//   - OPENAI_API_KEY - set via .env (auto-loaded below) or the process
 //     environment.
 //
 // Expected cost per run: under $0.001.

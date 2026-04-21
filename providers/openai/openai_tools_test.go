@@ -62,7 +62,7 @@ func TestCallSendsToolsAsFunctions(t *testing.T) {
 }
 
 func TestCallStrictModeDefault(t *testing.T) {
-	// Pinning the strict:true default as load-bearing — callers
+	// Pinning the strict:true default as load-bearing - callers
 	// don't pass it explicitly; flipping it silently changes schema
 	// enforcement behaviour. Keep this asserted in isolation.
 	var gotBody []byte

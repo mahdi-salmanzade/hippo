@@ -79,7 +79,7 @@ func NewEmbedder(opts ...EmbedderOption) hippo.Embedder {
 func (e *embedder) Name() string { return "ollama:" + e.model }
 
 // Dimensions reports the vector length from the most recent successful
-// Embed call. Zero before the first call — callers that need the
+// Embed call. Zero before the first call - callers that need the
 // value up front should issue a probe embedding first.
 func (e *embedder) Dimensions() int {
 	e.dimsMu.Lock()
@@ -101,7 +101,7 @@ func (e *embedder) Embed(ctx context.Context, texts []string) ([][]float32, erro
 			e.recordDims(vectors)
 			return vectors, nil
 		}
-		// The only error we silently downgrade on is 404 — any other
+		// The only error we silently downgrade on is 404 - any other
 		// failure (transport, 5xx, malformed JSON) propagates.
 		if !errors.Is(err, errEmbedEndpointMissing) {
 			return nil, err
@@ -176,7 +176,7 @@ func (e *embedder) embedBatch(ctx context.Context, texts []string) ([][]float32,
 	return out.Embeddings, nil
 }
 
-// embedSerial loops /api/embeddings one text at a time — the legacy
+// embedSerial loops /api/embeddings one text at a time - the legacy
 // single-input endpoint older Ollama builds (pre-0.1.44) still offer.
 func (e *embedder) embedSerial(ctx context.Context, texts []string) ([][]float32, error) {
 	out := make([][]float32, 0, len(texts))

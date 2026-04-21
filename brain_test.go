@@ -202,7 +202,7 @@ func TestBrainCallPrivacyViolation(t *testing.T) {
 func TestPrivacyLocalOnlyRoutesToLocalProvider(t *testing.T) {
 	// Two providers registered: a cloud-tier one and a local-only
 	// one. A Call with Privacy=LocalOnly must land on the local
-	// provider even though cloud is registered first — the
+	// provider even though cloud is registered first - the
 	// no-router path's privacy check skips stronger-than-ours
 	// providers rather than erroring.
 	//
@@ -218,7 +218,7 @@ func TestPrivacyLocalOnlyRoutesToLocalProvider(t *testing.T) {
 
 	// LocalOnly Call: cloud's CloudOK tier is weaker, so it must be
 	// filtered out. The Brain's no-router path currently only
-	// inspects the first provider — which means without router it
+	// inspects the first provider - which means without router it
 	// *does* hit ErrPrivacyViolation here. That's the correct
 	// assertion for the no-router path.
 	_, err := b.Call(context.Background(), Call{Prompt: "sensitive", Privacy: PrivacyLocalOnly})
@@ -710,7 +710,7 @@ func TestStreamContextCancelClosesChannel(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Cancel without releasing the gate so the fake provider never
-	// sends a chunk — the only way the channel closes is via ctx
+	// sends a chunk - the only way the channel closes is via ctx
 	// cancellation.
 	cancel()
 
@@ -732,7 +732,7 @@ func TestStreamContextCancelClosesChannel(t *testing.T) {
 	close(gate)
 
 	// Goroutines should drain back to baseline within 2s. Small +1/-1
-	// wiggle room is fine — the test asserts "not leaking", not exact
+	// wiggle room is fine - the test asserts "not leaking", not exact
 	// equality.
 	const leakSlack = 2
 	leakDeadline := time.Now().Add(2 * time.Second)

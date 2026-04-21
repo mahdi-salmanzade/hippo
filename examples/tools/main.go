@@ -1,6 +1,6 @@
 // Command tools is the canonical Pass 8 demo: register three
 // home-grown tools with hippo and watch the streaming tool loop work
-// end-to-end. hippo ships no tools of its own — everything you need
+// end-to-end. hippo ships no tools of its own - everything you need
 // to reproduce is in this file.
 //
 // Run with:
@@ -99,7 +99,7 @@ func (wordcountTool) Execute(ctx context.Context, args json.RawMessage) (hippo.T
 	return hippo.ToolResult{Content: strconv.Itoa(len(strings.Fields(in.Text)))}, nil
 }
 
-// evalExpr is a 3-operator recursive descent parser — enough for a
+// evalExpr is a 3-operator recursive descent parser - enough for a
 // demo, not production. Supports +, -, *, /, parens, numbers.
 func evalExpr(s string) (float64, error) {
 	p := &exprParser{s: strings.TrimSpace(s)}

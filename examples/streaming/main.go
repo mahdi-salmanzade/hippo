@@ -52,7 +52,7 @@ func (nowTool) Execute(context.Context, json.RawMessage) (hippo.ToolResult, erro
 	return hippo.ToolResult{Content: time.Now().UTC().Format(time.RFC3339)}, nil
 }
 
-// addTool adds two numbers. Tiny by design — the streaming demo just
+// addTool adds two numbers. Tiny by design - the streaming demo just
 // needs something the model will plausibly invoke.
 type addTool struct{}
 

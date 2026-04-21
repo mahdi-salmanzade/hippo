@@ -14,8 +14,8 @@ import (
 // real Anthropic infrastructure. Same gating shape as the non-stream
 // integration test: HIPPO_RUN_INTEGRATION=1 + ANTHROPIC_API_KEY.
 //
-// Asserts that streaming actually streams — a single large terminal
-// chunk would pass a lot of structural checks but defeat the point —
+// Asserts that streaming actually streams - a single large terminal
+// chunk would pass a lot of structural checks but defeat the point -
 // so we require at least two text chunks on a prompt that produces
 // multiple sentences worth of tokens.
 func TestIntegrationStreamHaiku(t *testing.T) {

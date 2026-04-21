@@ -1,5 +1,5 @@
 // Command memory demonstrates hippo's SQLite-backed memory store in
-// isolation — no provider, no LLM, no network. It opens a temporary
+// isolation - no provider, no LLM, no network. It opens a temporary
 // database, writes a handful of records across the three kinds, then
 // recalls them by keyword and by recency.
 //
@@ -89,7 +89,7 @@ func main() {
 	fmt.Println("== Seeded memory store at", dbPath)
 	fmt.Printf("   %d records written across working/episodic/profile\n\n", len(seed))
 
-	// 1. Keyword FTS5 recall — should surface both billing records.
+	// 1. Keyword FTS5 recall - should surface both billing records.
 	fmt.Println("== Recall: keyword \"billing\"")
 	results, err := mem.Recall(ctx, "billing", hippo.MemoryQuery{Limit: 5})
 	if err != nil {
@@ -97,7 +97,7 @@ func main() {
 	}
 	printResults(results)
 
-	// 2. Tag + kind filter — WIP items, episodic or working.
+	// 2. Tag + kind filter - WIP items, episodic or working.
 	fmt.Println("== Recall: tag=wip, kind in {working, episodic}")
 	results, err = mem.Recall(ctx, "", hippo.MemoryQuery{
 		Tags:  []string{"wip"},
@@ -109,7 +109,7 @@ func main() {
 	}
 	printResults(results)
 
-	// 3. Importance filter — only records with importance >= 0.5.
+	// 3. Importance filter - only records with importance >= 0.5.
 	fmt.Println("== Recall: importance >= 0.5")
 	results, err = mem.Recall(ctx, "", hippo.MemoryQuery{
 		MinImportance: 0.5,
@@ -120,7 +120,7 @@ func main() {
 	}
 	printResults(results)
 
-	// 4. Pure recency — no query, no filters.
+	// 4. Pure recency - no query, no filters.
 	fmt.Println("== Recall: all, newest first")
 	results, err = mem.Recall(ctx, "", hippo.MemoryQuery{Limit: 5})
 	if err != nil {

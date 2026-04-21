@@ -225,7 +225,7 @@ func BuildBrain(cfg *Config, logger *slog.Logger) (*BrainBundle, error) {
 
 	brain, err := hippo.New(opts...)
 	if err != nil {
-		// Tear down any MCP clients we opened — hippo.New's own
+		// Tear down any MCP clients we opened - hippo.New's own
 		// collision check is the typical failure mode, and leaving
 		// subprocesses running would leak across bundle rebuilds.
 		for _, c := range mcpClients {

@@ -70,7 +70,7 @@ var (
 	// ErrMaxToolHopsExceeded is set on Response.Err (Call) or emitted
 	// as the terminal StreamChunkError (Stream) when the tool-hop cap
 	// is reached while the provider still wants to call more tools.
-	// The Response / accumulated stream state is valid — callers can
+	// The Response / accumulated stream state is valid - callers can
 	// inspect ToolCalls and decide whether to continue manually or
 	// prompt the model differently. Tune via WithMaxToolHops.
 	ErrMaxToolHopsExceeded = errors.New("hippo: max tool hops exceeded")

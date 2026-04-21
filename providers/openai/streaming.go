@@ -59,7 +59,7 @@ func (p *provider) stream(ctx context.Context, c hippo.Call) (<-chan hippo.Strea
 
 // openStream POSTs to /v1/responses with stream:true, retrying the
 // same 429 / 5xx conditions as the non-streaming path. On 2xx it
-// returns the *http.Response with its Body still open — the caller
+// returns the *http.Response with its Body still open - the caller
 // owns closing it.
 func (p *provider) openStream(ctx context.Context, reqBody []byte) (*http.Response, error) {
 	const maxAttempts = 3
@@ -165,7 +165,7 @@ func (p *provider) readStream(
 		ev, err := scanner.Next(ctx)
 		if err != nil {
 			if err == io.EOF {
-				// Clean EOF without response.completed — unusual but
+				// Clean EOF without response.completed - unusual but
 				// not fatal; surface as error so the caller doesn't
 				// mistake it for a successful usage chunk.
 				emit(hippo.StreamChunk{Type: hippo.StreamChunkError,
@@ -243,7 +243,7 @@ func handleOpenAIEvent(
 		return false, nil
 
 	case "response.content_part.added":
-		// Content parts inside message items — purely metadata here,
+		// Content parts inside message items - purely metadata here,
 		// no delta text yet. Deltas arrive via response.output_text.delta.
 		return false, nil
 
@@ -276,7 +276,7 @@ func handleOpenAIEvent(
 		return false, nil
 
 	case "response.reasoning.delta":
-		// Encrypted reasoning deltas — not human-readable; dropped
+		// Encrypted reasoning deltas - not human-readable; dropped
 		// intentionally (see package doc in openai.go).
 		return false, nil
 
@@ -333,7 +333,7 @@ func handleOpenAIEvent(
 	case "response.completed", "response.incomplete":
 		// Both are "stream ended normally" from hippo's perspective.
 		// response.incomplete typically means max_output_tokens was
-		// reached — not an error, just a natural stop. The response
+		// reached - not an error, just a natural stop. The response
 		// payload carries the final usage.
 		var payload struct {
 			Response struct {

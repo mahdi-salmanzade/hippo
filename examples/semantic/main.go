@@ -1,4 +1,4 @@
-// Command semantic demonstrates hippo's v0.2 semantic memory: seeds a
+// Command semantic demonstrates hippo's v1.0 semantic memory: seeds a
 // small knowledge base, runs keyword / semantic / hybrid queries
 // against it, and shows how nucleus temporal expansion pulls
 // conversation-adjacent turns into the result set.
@@ -11,7 +11,7 @@
 //	ollama pull nomic-embed-text
 //	go run ./examples/semantic
 //
-// No cloud keys required — everything runs locally against Ollama.
+// No cloud keys required - everything runs locally against Ollama.
 package main
 
 import (
@@ -102,9 +102,9 @@ func main() {
 		text string
 		note string
 	}{
-		{"kubernetes upgrade timeline", "multi-word — keyword OR-matches 'kubernetes' and 'upgrade'"},
-		{"feline companions", "semantic-only win — no token overlap with 'cats'/'kittens'"},
-		{"invoice processing", "billing adjacency — hybrid + temporal expansion shine"},
+		{"kubernetes upgrade timeline", "multi-word - keyword OR-matches 'kubernetes' and 'upgrade'"},
+		{"feline companions", "semantic-only win - no token overlap with 'cats'/'kittens'"},
+		{"invoice processing", "billing adjacency - hybrid + temporal expansion shine"},
 	}
 
 	for _, q := range queries {
@@ -156,7 +156,7 @@ func seedRecords() []hippo.Record {
 		"Helm chart for the api service lags by two minor versions.",
 		"Felines in the office tend to pick one human to follow around.",
 		"Payments cron job re-ran after the DST change broke the schedule.",
-		"kube-proxy got restarted twice today — probably connection drain tuning.",
+		"kube-proxy got restarted twice today - probably connection drain tuning.",
 		"The tabby is chasing shadows on the wall this afternoon.",
 		"Billing dashboard still shows the old MRR calculation formula.",
 		"etcd metrics spiked during the 1.30 upgrade but recovered.",

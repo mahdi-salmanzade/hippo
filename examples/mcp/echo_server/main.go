@@ -2,8 +2,8 @@
 // stdio. It exposes a single tool named `echo` that returns its input
 // unchanged, plus an `add` tool that returns the sum of two numbers.
 //
-// The server exists primarily to back hippo's MCP integration test —
-// an external dependency-free target the test can spawn — and to
+// The server exists primarily to back hippo's MCP integration test -
+// an external dependency-free target the test can spawn - and to
 // document what a hand-written MCP server looks like. No framework,
 // no external package, ~150 lines of plain JSON-RPC.
 //

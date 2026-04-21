@@ -9,7 +9,7 @@ import (
 )
 
 // fakeTool is a minimal Tool for tests that don't care about
-// execution semantics — they just need something implementing the
+// execution semantics - they just need something implementing the
 // interface with a given name.
 type fakeTool struct {
 	name        string
@@ -103,7 +103,7 @@ func TestToolSetLen(t *testing.T) {
 }
 
 func TestToolSetNilSafe(t *testing.T) {
-	// Nil *ToolSet should behave like an empty one — the Brain
+	// Nil *ToolSet should behave like an empty one - the Brain
 	// holds a pointer that may be nil when WithTools wasn't called.
 	var ts *ToolSet
 	if _, ok := ts.Get("anything"); ok {

@@ -44,7 +44,7 @@ type memoryBackfillView struct {
 
 const memoryPageSize = 20
 
-// handleMemoryGet renders /memory — the browse-and-search page.
+// handleMemoryGet renders /memory - the browse-and-search page.
 func (s *Server) handleMemoryGet(w http.ResponseWriter, r *http.Request) {
 	if s.Bundle() == nil || s.Bundle().Memory == nil {
 		flash, flashErr := readFlash(w, r)
@@ -108,7 +108,7 @@ func (s *Server) loadMemoryRows(ctx context.Context, query, mode string, page in
 	q := hippo.MemoryQuery{Limit: memoryPageSize + 1}
 	switch mode {
 	case "keyword":
-		// Plain FTS5 — set semantic=false, use query as-is.
+		// Plain FTS5 - set semantic=false, use query as-is.
 	case "semantic":
 		q.Semantic = true
 	case "hybrid":
@@ -116,12 +116,12 @@ func (s *Server) loadMemoryRows(ctx context.Context, query, mode string, page in
 		q.HybridWeight = 0.6
 		q.TemporalExpansion = 30 * time.Minute
 	case "recent":
-		// No query — fall through to recency path.
+		// No query - fall through to recency path.
 		query = ""
 	}
 
-	// LIMIT+OFFSET via a raw query when paginating — hippo.MemoryQuery
-	// doesn't expose offset. For v0.2 paginate by re-running with
+	// LIMIT+OFFSET via a raw query when paginating - hippo.MemoryQuery
+	// doesn't expose offset. For v1.0 paginate by re-running with
 	// higher limits and slicing; this mirrors how semantic expansion
 	// returns denormalised sets anyway.
 	q.Limit = (page + 1) * (memoryPageSize + 1)
@@ -218,7 +218,7 @@ func (s *Server) handleMemoryPrune(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Manual prune calls the legacy hippo.Memory.Prune which targets
-	// Working rows older than 1 day — a predictable, conservative
+	// Working rows older than 1 day - a predictable, conservative
 	// action for a button click.
 	if err := pruner.Prune(r.Context(), time.Now().Add(-24*time.Hour)); err != nil {
 		writeFlash(w, "", "prune failed: "+err.Error())

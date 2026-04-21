@@ -12,7 +12,7 @@ import (
 )
 
 // stubTool is a minimal hippo.Tool for request-shape tests. The
-// Execute method is never called here — these tests only exercise
+// Execute method is never called here - these tests only exercise
 // the provider's translation of hippo.Tool into Anthropic's
 // native tool schema plus the response-side parsing.
 type stubTool struct {
@@ -124,7 +124,7 @@ func TestCallParsesToolUseContentBlock(t *testing.T) {
 
 func TestCallFollowupRequestIncludesToolResult(t *testing.T) {
 	// Simulate a second hippo Call that arrives after the model
-	// invoked get_weather on turn 1 — the messages carry an
+	// invoked get_weather on turn 1 - the messages carry an
 	// assistant tool_use echo plus a role:"tool" result. Verify the
 	// wire body has the right content-block shape for both.
 	var gotBody []byte
@@ -203,7 +203,7 @@ func TestCallFollowupRequestIncludesToolResult(t *testing.T) {
 
 func TestCallFoldsParallelToolResults(t *testing.T) {
 	// Two role:"tool" messages in sequence must fold into a single
-	// user turn with multiple tool_result blocks — that's how
+	// user turn with multiple tool_result blocks - that's how
 	// Anthropic expects parallel-call results to arrive.
 	var gotBody []byte
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

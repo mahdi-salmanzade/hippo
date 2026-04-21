@@ -158,11 +158,11 @@ const (
 	// the ToolCall.ID of the call that produced it; ToolResult
 	// carries the executed result. For any given ToolCallID the
 	// StreamChunkToolCall arrives strictly before its
-	// StreamChunkToolResult — consumers can rely on this ordering
+	// StreamChunkToolResult - consumers can rely on this ordering
 	// when threading a UI.
 	//
 	// Tool results are NOT fed back through the provider via the
-	// stream — that happens internally before the next provider
+	// stream - that happens internally before the next provider
 	// turn begins. These chunks are purely for the consumer's
 	// observability (showing "tool X returned Y" in a UI, logging
 	// a trace, etc).
@@ -193,7 +193,7 @@ type StreamChunk struct {
 	Type StreamChunkType
 
 	// Delta carries the incremental text for StreamChunkText and
-	// StreamChunkThinking chunks. Deltas are not cumulative — consumers
+	// StreamChunkThinking chunks. Deltas are not cumulative - consumers
 	// concatenate them to reconstruct the full text.
 	Delta string
 
@@ -256,7 +256,7 @@ type Response struct {
 	// ReceivedAt is when the response was finalised locally.
 	ReceivedAt time.Time
 	// Err is non-nil when the Call completed but something
-	// non-fatal happened worth reporting to the caller — most
+	// non-fatal happened worth reporting to the caller - most
 	// commonly ErrMaxToolHopsExceeded, which means the response is
 	// still usable but the tool-execution loop stopped before the
 	// model was done. Distinct from the Call's own return error,
@@ -364,13 +364,13 @@ type MemoryQuery struct {
 	// Semantic requests embedding-based retrieval. When the backend has
 	// an Embedder configured, Recall compares each candidate's stored
 	// embedding against the embedded query text. Without an Embedder
-	// the flag is silently ignored — callers are expected to get
+	// the flag is silently ignored - callers are expected to get
 	// degraded results, not an error.
 	Semantic bool
 	// HybridWeight blends keyword and semantic scores when both a query
 	// string and Semantic are set. 0.0 = pure keyword, 1.0 = pure
 	// semantic. Zero value defaults to 0.6 in the backend (biased
-	// toward semantic — keyword exactness still wins on high BM25
+	// toward semantic - keyword exactness still wins on high BM25
 	// matches).
 	HybridWeight float64
 	// TemporalExpansion, when non-zero, pulls records within ±duration

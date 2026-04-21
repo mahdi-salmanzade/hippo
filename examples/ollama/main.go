@@ -8,7 +8,7 @@
 //	OLLAMA_HOST=http://host:11434 go run ./examples/ollama
 //
 // If the daemon isn't reachable the program prints an install hint
-// and exits 0 — local-only infrastructure shouldn't break example
+// and exits 0 - local-only infrastructure shouldn't break example
 // runs on machines that haven't set it up.
 package main
 

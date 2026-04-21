@@ -85,7 +85,7 @@ func TestScannerHandlesCRLF(t *testing.T) {
 }
 
 func TestScannerLargeEvent(t *testing.T) {
-	// 300 KiB of data in a single event — larger than bufio.Scanner's
+	// 300 KiB of data in a single event - larger than bufio.Scanner's
 	// default 64 KiB max but well within our 1 MiB override. This
 	// pins the buffer-size behaviour; a regression that reverts to the
 	// default would fail here with bufio.ErrTooLong.

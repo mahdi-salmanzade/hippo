@@ -100,7 +100,7 @@ func (p *provider) openStream(ctx context.Context, reqBody []byte) (*http.Respon
 // readNDJSONStream drains the NDJSON body, translates each line into
 // a hippo.StreamChunk, and closes out when done. json.Decoder reads a
 // sequence of JSON objects from the body with no manual line
-// splitting — perfect for Ollama's framing.
+// splitting - perfect for Ollama's framing.
 //
 // Terminal handling: when an object arrives with Done=true, emit any
 // reassembled tool calls FIRST, then the terminal StreamChunkUsage.
@@ -139,7 +139,7 @@ func (p *provider) readNDJSONStream(ctx context.Context, httpResp *http.Response
 		var obj chatResponse
 		if err := dec.Decode(&obj); err != nil {
 			if errors.Is(err, io.EOF) {
-				// Clean EOF without a Done=true terminal — treat as
+				// Clean EOF without a Done=true terminal - treat as
 				// a mid-stream failure so callers don't mistake it
 				// for a successful usage chunk.
 				emit(hippo.StreamChunk{Type: hippo.StreamChunkError,

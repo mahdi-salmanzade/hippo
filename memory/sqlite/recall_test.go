@@ -313,7 +313,7 @@ func TestMinImportanceFilterUsesEffective(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	// Old Working record — base 0.9 but 72h ago; effective ≈ 0.9 * exp(-3) ≈ 0.045.
+	// Old Working record - base 0.9 but 72h ago; effective ≈ 0.9 * exp(-3) ≈ 0.045.
 	if err := mem.Add(ctx, &hippo.Record{
 		Kind: hippo.MemoryWorking, Content: "stale", Timestamp: base.Add(-72 * time.Hour), Importance: 0.9,
 	}); err != nil {

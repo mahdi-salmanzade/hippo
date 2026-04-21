@@ -15,9 +15,9 @@ import (
 // end-to-end.
 //
 // Two gates, both required:
-//   - HIPPO_RUN_INTEGRATION=1 — explicit opt-in. Prevents accidental
+//   - HIPPO_RUN_INTEGRATION=1 - explicit opt-in. Prevents accidental
 //     network calls during routine `go test ./...` runs.
-//   - ANTHROPIC_API_KEY — set via .env (auto-loaded below) or the
+//   - ANTHROPIC_API_KEY - set via .env (auto-loaded below) or the
 //     process environment.
 //
 // Expected cost per run: < $0.001 (a few dozen tokens each direction).

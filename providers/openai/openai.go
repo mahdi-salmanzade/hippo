@@ -18,7 +18,7 @@
 // Pass 5 scope: synchronous, no streaming, no tool calling. Stream
 // returns ErrNotImplemented (Pass 6); Call.Tools are ignored with a
 // debug log (Pass 8). Stateful conversations via previous_response_id
-// are intentionally out of scope — hippo owns state at the memory
+// are intentionally out of scope - hippo owns state at the memory
 // layer, the provider is stateless.
 package openai
 
@@ -76,7 +76,7 @@ func WithModel(model string) Option { return func(p *provider) { p.model = model
 
 // WithBaseURL overrides the default https://api.openai.com endpoint.
 // Useful for httptest servers and OpenAI-compatible endpoints (though
-// the Responses API is OpenAI-specific — most compat shims only speak
+// the Responses API is OpenAI-specific - most compat shims only speak
 // Chat Completions).
 func WithBaseURL(u string) Option { return func(p *provider) { p.baseURL = u } }
 
@@ -185,7 +185,7 @@ func (p *provider) Privacy() hippo.PrivacyTier { return hippo.PrivacyCloudOK }
 
 // EstimateCost returns a pre-flight USD estimate for c. Uses the same
 // len/4 heuristic as the Anthropic adapter, plus a 30% input buffer
-// for reasoning models to leave headroom for the reasoning trace —
+// for reasoning models to leave headroom for the reasoning trace -
 // OpenAI bills reasoning tokens as output tokens, so under-estimating
 // them causes the router to pick too-cheap models.
 func (p *provider) EstimateCost(c hippo.Call) (float64, error) {
@@ -443,7 +443,7 @@ func (p *provider) Stream(ctx context.Context, c hippo.Call) (<-chan hippo.Strea
 // name, description, parameters, strict:true} entry in the top-level
 // tools array. strict:true enforces the schema on argument generation.
 //
-// Prompt-only Calls (no Messages) send Input as a bare JSON string —
+// Prompt-only Calls (no Messages) send Input as a bare JSON string -
 // the cheapest shape the API accepts. Adding tools or any Messages
 // entry switches to the array form.
 func (p *provider) buildRequestBody(c hippo.Call, model string, maxTokens int) (responseRequest, error) {

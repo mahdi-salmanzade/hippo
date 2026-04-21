@@ -8,7 +8,7 @@
 // block the Call, and returns the first viable Decision.
 //
 // Load("") returns a Router backed by the embedded default_policy.yaml
-// — callers can run the library with zero YAML of their own.
+// - callers can run the library with zero YAML of their own.
 package yaml
 
 import (
@@ -101,7 +101,7 @@ func WithWatch(enabled bool) Option {
 }
 
 // WithLogger sets the structured logger used by the hot-reload
-// goroutine. Defaults to a discard logger — routing itself is not
+// goroutine. Defaults to a discard logger - routing itself is not
 // chatty.
 func WithLogger(l *slog.Logger) Option {
 	return func(r *router) { r.logger = l }
@@ -110,7 +110,7 @@ func WithLogger(l *slog.Logger) Option {
 // router implements hippo.Router. The *Policy pointer is swapped
 // atomically so Route is lock-free, and the hot-reload goroutine (if
 // any) is stopped via the stop channel. *router is also an io.Closer
-// — callers who enabled WithWatch should type-assert and Close to
+// - callers who enabled WithWatch should type-assert and Close to
 // stop the watcher goroutine on shutdown.
 type router struct {
 	path     string
@@ -199,7 +199,7 @@ func (r *router) Close() error {
 // watchLoop runs in its own goroutine when WithWatch(true) is set.
 // It polls the policy file's mtime and atomically swaps the Policy
 // pointer on change. Parse failures during reload are logged at Warn
-// and the previous policy remains authoritative — a broken edit
+// and the previous policy remains authoritative - a broken edit
 // should not take down a running Brain.
 func (r *router) watchLoop() {
 	ticker := time.NewTicker(pollInterval)
@@ -307,7 +307,7 @@ func (r *router) tryList(c hippo.Call, slugs []string, providers []hippo.Provide
 		cost, err := p.EstimateCost(callCopy)
 		if err != nil {
 			// Unknown model within a registered provider is a
-			// silent skip — the router tries the next candidate.
+			// silent skip - the router tries the next candidate.
 			r.logger.Debug("router/yaml: EstimateCost failed; skipping candidate",
 				"slug", slug, "err", err)
 			continue
@@ -337,7 +337,7 @@ func providerByName(providers []hippo.Provider, name string) hippo.Provider {
 	return nil
 }
 
-// splitSlug splits "provider:model" — empty on either side is
+// splitSlug splits "provider:model" - empty on either side is
 // rejected. Model strings may themselves contain colons (e.g. the
 // dated "claude-haiku-4-5-20250930" form), so we split on the first
 // colon only.
@@ -351,7 +351,7 @@ func splitSlug(s string) (provider, model string, ok bool) {
 
 // minNonZero returns the minimum of the arguments, ignoring values
 // that are zero (treated as "no cap"). If all arguments are zero,
-// returns +Inf — i.e. unlimited.
+// returns +Inf - i.e. unlimited.
 func minNonZero(vals ...float64) float64 {
 	m := math.Inf(1)
 	for _, v := range vals {

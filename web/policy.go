@@ -58,7 +58,7 @@ func (s *Server) handlePolicyPost(w http.ResponseWriter, r *http.Request) {
 		path = "~/.hippo/policy.yaml"
 	}
 
-	// Validate first — yamlrouter.LoadBytes fails on malformed YAML or
+	// Validate first - yamlrouter.LoadBytes fails on malformed YAML or
 	// unknown privacy tiers before we touch disk or the live router.
 	if _, err := yamlrouter.LoadBytes([]byte(body)); err != nil {
 		writeFlash(w, "", "policy invalid: "+err.Error())

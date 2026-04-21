@@ -4,9 +4,9 @@
 // records, and a $0.10 budget ceiling. Runs two Calls against the
 // same Brain:
 //
-//  1. Task=Reason, Privacy=CloudOK   — routes to Anthropic (or OpenAI
+//  1. Task=Reason, Privacy=CloudOK   - routes to Anthropic (or OpenAI
 //     as fallback), showing the cloud path.
-//  2. Task=Protect, Privacy=LocalOnly — routes to Ollama, showing the
+//  2. Task=Protect, Privacy=LocalOnly - routes to Ollama, showing the
 //     local path.
 //
 // Both calls hydrate memory from the same store; the second one pays
@@ -19,7 +19,7 @@
 // Any provider that's unreachable / unconfigured is silently dropped
 // from registration. If neither Ollama nor a cloud key is available
 // the Privacy=LocalOnly or Privacy=CloudOK Call will return
-// ErrNoRoutableProvider — that's the correct behaviour, and the demo
+// ErrNoRoutableProvider - that's the correct behaviour, and the demo
 // surfaces it rather than hiding it.
 package main
 
@@ -53,7 +53,7 @@ func main() {
 	opts = append(opts, maybeOllama()...)
 
 	if len(opts) == 0 {
-		log.Fatal("no providers available — set ANTHROPIC_API_KEY, OPENAI_API_KEY, or start a local Ollama")
+		log.Fatal("no providers available - set ANTHROPIC_API_KEY, OPENAI_API_KEY, or start a local Ollama")
 	}
 
 	r, err := yamlrouter.Load("")
@@ -121,13 +121,13 @@ func runLocalCall(ctx context.Context, b *hippo.Brain, bud hippo.BudgetTracker) 
 	resp, err := b.Call(ctx, hippo.Call{
 		Task:      hippo.TaskProtect,
 		Privacy:   hippo.PrivacyLocalOnly,
-		Prompt:    "Summarise my working-memory notes — don't let this leave the device.",
+		Prompt:    "Summarise my working-memory notes - don't let this leave the device.",
 		UseMemory: hippo.MemoryScope{Mode: hippo.MemoryScopeRecent},
 		MaxTokens: 150,
 	})
 	if err != nil {
 		if errors.Is(err, hippo.ErrNoRoutableProvider) {
-			fmt.Println("(no local provider registered — install Ollama to exercise this path)")
+			fmt.Println("(no local provider registered - install Ollama to exercise this path)")
 			return
 		}
 		log.Fatalf("local call: %v", err)
@@ -146,7 +146,7 @@ func maybeAnthropic() []hippo.Option {
 	}
 	p, err := anthropic.New(anthropic.WithAPIKey(key))
 	if err != nil {
-		log.Printf("anthropic: %v — skipping", err)
+		log.Printf("anthropic: %v - skipping", err)
 		return nil
 	}
 	return []hippo.Option{hippo.WithProvider(p)}
@@ -159,7 +159,7 @@ func maybeOpenAI() []hippo.Option {
 	}
 	p, err := openai.New(openai.WithAPIKey(key))
 	if err != nil {
-		log.Printf("openai: %v — skipping", err)
+		log.Printf("openai: %v - skipping", err)
 		return nil
 	}
 	return []hippo.Option{hippo.WithProvider(p)}
@@ -171,7 +171,7 @@ func maybeOllama() []hippo.Option {
 	}
 	p, err := ollama.New(ollama.WithBaseURL(ollamaBaseURL))
 	if err != nil {
-		log.Printf("ollama: %v — skipping", err)
+		log.Printf("ollama: %v - skipping", err)
 		return nil
 	}
 	return []hippo.Option{hippo.WithProvider(p)}

@@ -94,7 +94,7 @@ func TestLoadFindsNearestUpward(t *testing.T) {
 func TestLoadNoEnvFileIsNoOp(t *testing.T) {
 	// Chdir into an empty temp dir with no .env anywhere above it.
 	// On most systems at least / has no .env; if a user dropped one
-	// at root, this test would be flaky — but that's an exotic
+	// at root, this test would be flaky - but that's an exotic
 	// configuration and not worth defending against.
 	dir := t.TempDir()
 	old, _ := os.Getwd()

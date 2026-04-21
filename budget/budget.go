@@ -58,7 +58,7 @@ type tracker struct {
 // EstimateCost computes cost from Usage × rate. An unknown
 // (provider, model) pair returns cost=0 and a wrapped
 // hippo.ErrUnknownPricing error. Brain should log but not fail the
-// call — the Pass 3 design prefers serving under-priced calls over
+// call - the Pass 3 design prefers serving under-priced calls over
 // blocking on a pricing-table update.
 func (t *tracker) EstimateCost(provider, model string, usage hippo.Usage) (float64, error) {
 	if t.pricing == nil {

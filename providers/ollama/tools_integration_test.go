@@ -30,7 +30,7 @@ func (e echoTool) Execute(_ context.Context, args json.RawMessage) (hippo.ToolRe
 // toolCapableFamilies is the conservative list of installed-model
 // name prefixes that reliably emit structured tool_calls. Models
 // outside this list may still speak JSON blobs in their content,
-// but hippo only parses the structured field — so we skip if none
+// but hippo only parses the structured field - so we skip if none
 // of these are installed rather than flake on partial support.
 var toolCapableFamilies = []string{
 	"llama3.1", "llama3.2", "llama3.3",

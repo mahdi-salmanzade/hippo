@@ -120,7 +120,7 @@ func WithDefaultModel(model string) Option {
 // registry-mutation API on purpose.
 //
 // A single call that supplies WithTools more than once (or mixes
-// with NewToolSet manually) overrides the earlier registration —
+// with NewToolSet manually) overrides the earlier registration -
 // the last WithTools wins. The validation that rejects duplicate
 // or malformed names happens here, so the error surfaces from
 // hippo.New rather than the first dispatched Call.
@@ -144,7 +144,7 @@ func WithTools(tools ...Tool) Option {
 // WithMaxToolHops caps how many rounds of (tool-call → execute →
 // feed-back) a single Call may traverse. Default: 10. After the
 // cap is hit, the Call returns the final provider response with
-// Response.Err = ErrMaxToolHopsExceeded — the response body is
+// Response.Err = ErrMaxToolHopsExceeded - the response body is
 // still usable; callers can inspect ToolCalls and continue manually.
 //
 // n <= 0 is treated as "use default".
@@ -173,7 +173,7 @@ func WithMaxParallelTools(n int) Option {
 	}
 }
 
-// MCPToolSource is any object that exposes a list of Tools — in
+// MCPToolSource is any object that exposes a list of Tools - in
 // practice, a *mcp.Client. Declared as a narrow interface here so the
 // hippo root package stays cycle-free (the mcp package imports
 // hippo.Tool rather than the other way around).

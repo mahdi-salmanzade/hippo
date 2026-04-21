@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# fresh-home-test.sh — first-run smoke test for a freshly-built hippo
+# fresh-home-test.sh - first-run smoke test for a freshly-built hippo
 # binary. Simulates the experience of a new user who has never run
 # hippo before: no ~/.hippo, no config, nothing.
 #

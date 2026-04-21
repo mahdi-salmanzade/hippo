@@ -133,7 +133,7 @@ func TestHTTPTransportSendsSessionIDAfterInitialize(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer c.Close()
-	// initialize + initialized + tools/list — the last two carry the
+	// initialize + initialized + tools/list - the last two carry the
 	// session id. Expect the session-match counter to have moved.
 	if handler.sessionCalls.Load() == 0 {
 		t.Errorf("expected session id to be echoed on subsequent requests")

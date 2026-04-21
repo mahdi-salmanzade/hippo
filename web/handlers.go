@@ -373,7 +373,7 @@ func (s *Server) handleModelsJSON(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// handleLoginGet renders a minimal form — users paste their token
+// handleLoginGet renders a minimal form - users paste their token
 // here when binding off-localhost.
 func (s *Server) handleLoginGet(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")

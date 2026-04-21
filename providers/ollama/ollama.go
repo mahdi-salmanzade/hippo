@@ -4,7 +4,7 @@
 // Ollama is the canonical PrivacyLocalOnly provider: inference happens
 // on the host machine and nothing leaves the network. The adapter
 // speaks Ollama's /api/chat endpoint for both synchronous calls and
-// NDJSON streaming. No credentials — if the daemon is reachable it
+// NDJSON streaming. No credentials - if the daemon is reachable it
 // works, if not the operations surface a transport error.
 //
 // # Tool calls
@@ -17,7 +17,7 @@
 // chunk.
 //
 // Models that do not support native tool calling may instead emit
-// plain text that looks like a function call — the adapter does not
+// plain text that looks like a function call - the adapter does not
 // attempt to parse these. If you need tool calling, pin a model that
 // advertises the capability.
 //
@@ -31,7 +31,7 @@
 // to 8192.
 //
 // Querying /api/show for an authoritative per-architecture
-// context_length is intentionally skipped — the schema varies across
+// context_length is intentionally skipped - the schema varies across
 // Ollama versions and parsing it robustly is more work than the
 // payoff. If you need a precise window, add a row for your model to
 // budget/pricing.yaml.
@@ -145,7 +145,7 @@ func (p *provider) EstimateCost(c hippo.Call) (float64, error) {
 // Models returns the list of models installed in the Ollama daemon.
 // Results are cached for 30 seconds so the router can call this on
 // every routing decision without flooding the server. If the daemon
-// is unreachable, returns an empty slice and logs at Warn — a live
+// is unreachable, returns an empty slice and logs at Warn - a live
 // Ollama daemon is not a hippo startup dependency.
 func (p *provider) Models() []hippo.ModelInfo {
 	p.modelsMu.Lock()
@@ -173,7 +173,7 @@ func (p *provider) Models() []hippo.ModelInfo {
 // fetchTags queries /api/tags and produces a sorted hippo.ModelInfo
 // slice. ContextWindow is derived from budget.DefaultPricing when the
 // installed model is registered; otherwise falls back to 8192 (a
-// reasonable minimum — most stock Ollama models run at least this).
+// reasonable minimum - most stock Ollama models run at least this).
 func (p *provider) fetchTags(ctx context.Context) ([]hippo.ModelInfo, error) {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
@@ -300,7 +300,7 @@ type chatResponse struct {
 // Message translation:
 //
 //   - system, user, assistant (plain) messages pass through
-//     untouched — Ollama accepts system natively in the messages
+//     untouched - Ollama accepts system natively in the messages
 //     array, no top-level hoisting needed.
 //   - assistant messages with ToolCalls serialise with tool_calls
 //     populated (and content kept if the model emitted both text
@@ -545,8 +545,8 @@ func classifyHTTPError(statusCode int, body []byte) error {
 	switch {
 	case statusCode == http.StatusNotFound:
 		// Ollama returns 404 when the model isn't installed. That's
-		// ErrModelNotFound — same as the cloud providers' model-unknown
-		// branch — though the underlying message ("model 'foo' not
+		// ErrModelNotFound - same as the cloud providers' model-unknown
+		// branch - though the underlying message ("model 'foo' not
 		// found, try pulling it first") is Ollama-specific.
 		return fmt.Errorf("%w: %s", hippo.ErrModelNotFound, msg)
 	case statusCode == http.StatusTooManyRequests:

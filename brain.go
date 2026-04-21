@@ -112,7 +112,7 @@ func (b *Brain) Embedder() Embedder { return b.cfg.embedder }
 //     once, record one episode.
 //
 // When the hop cap is hit, Call returns with the final turn's
-// response and Response.Err = ErrMaxToolHopsExceeded — the response
+// response and Response.Err = ErrMaxToolHopsExceeded - the response
 // is still usable; callers can inspect ToolCalls and continue
 // manually or prompt the model differently.
 func (b *Brain) Call(ctx context.Context, c Call) (*Response, error) {
@@ -270,7 +270,7 @@ func addUsage(a, b Usage) Usage {
 // toolOutcome is the result of one tool execution during the loop.
 // CallID and ToolName correlate the outcome back to the ToolCall
 // that produced it so the feedback message has the right id/name
-// fields (providers use these differently — Anthropic tool_use_id,
+// fields (providers use these differently - Anthropic tool_use_id,
 // OpenAI call_id, Ollama tool_call_id).
 type toolOutcome struct {
 	CallID   string
@@ -291,7 +291,7 @@ type toolOutcome struct {
 // sees the failure and can correct course. Unknown tool names
 // become IsError results with "tool not found". Context
 // cancellation during execution produces IsError results with
-// "cancelled" — the loop itself checks ctx.Err afterwards.
+// "cancelled" - the loop itself checks ctx.Err afterwards.
 func (b *Brain) executeToolsParallel(ctx context.Context, calls []ToolCall) []toolOutcome {
 	outcomes := make([]toolOutcome, len(calls))
 	if len(calls) == 0 {
@@ -329,7 +329,7 @@ func (b *Brain) executeToolsParallel(ctx context.Context, calls []ToolCall) []to
 }
 
 // executeOneTool looks up the tool in the registry and runs it with
-// panic recovery and error conversion. Never returns a raw error —
+// panic recovery and error conversion. Never returns a raw error -
 // all failure modes collapse into ToolResult{IsError: true, Content: <msg>}
 // so the loop can feed them back to the model uniformly.
 func (b *Brain) executeOneTool(ctx context.Context, call ToolCall) (out toolOutcome) {
@@ -392,7 +392,7 @@ func (b *Brain) decide(ctx context.Context, c Call) (Decision, error) {
 		return d, nil
 	}
 
-	// No router — legacy "first provider" dispatch.
+	// No router - legacy "first provider" dispatch.
 	if len(b.cfg.providers) > 1 {
 		b.logger.Warn("hippo: multiple providers + no router; using first (register WithRouter to route)",
 			"count", len(b.cfg.providers),
@@ -408,8 +408,8 @@ func (b *Brain) decide(ctx context.Context, c Call) (Decision, error) {
 
 // hydrateMemory recalls memory records for c and returns them, or nil
 // if memory is not configured, the call opted out, or Recall failed.
-// A failed recall is logged at Warn — memory is a helper, not a hard
-// dependency — and an empty slice is returned. Call and Stream both
+// A failed recall is logged at Warn - memory is a helper, not a hard
+// dependency - and an empty slice is returned. Call and Stream both
 // use this so the hydration behaviour stays identical across paths.
 func (b *Brain) hydrateMemory(ctx context.Context, c Call) []Record {
 	if c.UseMemory.Mode == MemoryScopeNone || b.cfg.memory == nil {
@@ -455,7 +455,7 @@ func providerByName(providers []Provider, name string) Provider {
 //     aggregated across every turn.
 //   - On mid-stream failure, one terminal StreamChunkError
 //     replaces the usage chunk.
-//   - Per-turn provider Usage chunks are NOT forwarded — they fold
+//   - Per-turn provider Usage chunks are NOT forwarded - they fold
 //     into the final aggregated total so the consumer sees the
 //     stream as one continuous conversation, not N concatenated turns.
 //   - Callers MUST fully drain the channel or cancel ctx to avoid
@@ -491,7 +491,7 @@ func (b *Brain) Stream(ctx context.Context, c Call) (<-chan StreamChunk, error) 
 
 	// Open the first provider stream synchronously so handshake
 	// failures (bad credentials, unreachable server) surface as the
-	// error return of Brain.Stream — with no channel for the caller
+	// error return of Brain.Stream - with no channel for the caller
 	// to drain. Subsequent-turn handshake errors inside the tool
 	// loop become terminal StreamChunkError chunks instead.
 	enriched := injectMemory(c, memoryHits)
@@ -516,8 +516,8 @@ func (b *Brain) Stream(ctx context.Context, c Call) (<-chan StreamChunk, error) 
 
 // streamWithTools is the multi-turn streaming loop. It calls
 // provider.Stream once per turn, forwards non-terminal chunks,
-// accumulates the turn's tool calls and usage, then — if the model
-// wanted tools — executes them, emits StreamChunkToolResult chunks,
+// accumulates the turn's tool calls and usage, then - if the model
+// wanted tools - executes them, emits StreamChunkToolResult chunks,
 // and loops. The caller-visible channel stays open across turns so
 // the stream reads as one continuous event sequence.
 //
@@ -546,7 +546,7 @@ func (b *Brain) streamWithTools(
 	// echoedModel tracks the actual model id the provider reports on
 	// its per-turn Usage chunks, so the terminal aggregated chunk
 	// carries the dated variant (e.g. "claude-haiku-4-5-20250930")
-	// rather than the caller's alias — and so a no-router Brain
+	// rather than the caller's alias - and so a no-router Brain
 	// whose decision.Model is empty still gets a usable Model on the
 	// final chunk.
 	echoedModel := decision.Model
@@ -609,10 +609,10 @@ func (b *Brain) streamWithTools(
 					return
 				}
 			case StreamChunkUsage:
-				// Buffer — one aggregated usage chunk lands at the
+				// Buffer - one aggregated usage chunk lands at the
 				// very end, not per turn. Capture the model/provider
 				// the adapter stamped (more specific than the router's
-				// decision — the decision's Model can be empty for
+				// decision - the decision's Model can be empty for
 				// no-router Brains, and is always the alias rather
 				// than the dated variant the API echoed back). Also
 				// accumulate CostUSD so a Brain with no budget tracker
@@ -698,12 +698,12 @@ func (b *Brain) streamWithTools(
 // stream ended on a hop cap), and queues the episode record.
 //
 // providerName / modelName are the echoed values captured from the
-// provider's per-turn Usage chunks — NOT decision.Provider/.Model
-// directly — so (a) a no-router Brain whose decision.Model is empty
+// provider's per-turn Usage chunks - NOT decision.Provider/.Model
+// directly - so (a) a no-router Brain whose decision.Model is empty
 // still gets a populated Model on the terminal chunk, and (b) the
 // dated variant the API echoed back ("claude-haiku-4-5-20250930")
 // flows through rather than the caller's alias. finalErr non-nil
-// means hop cap hit — emit the usage first so the consumer has the
+// means hop cap hit - emit the usage first so the consumer has the
 // aggregated state, then the error.
 func (b *Brain) emitTerminalStreamUsage(
 	ctx context.Context,
@@ -768,11 +768,11 @@ func (b *Brain) emitTerminalStreamUsage(
 // parameters) plus the full-text query string Recall should use.
 //
 // Mode semantics:
-//   - Recent: "what happened lately" — empty query string, time
+//   - Recent: "what happened lately" - empty query string, time
 //     window, ordered by recency.
-//   - ByTags: "records with these tags" — empty query string, tag
+//   - ByTags: "records with these tags" - empty query string, tag
 //     filter, ordered by recency.
-//   - Full: "search everything relevant to the prompt" — prompt
+//   - Full: "search everything relevant to the prompt" - prompt
 //     feeds FTS5, no time filter, broader limit.
 //
 // The prompt is only used when Full mode asks for content matching.
@@ -793,7 +793,7 @@ func memoryQueryFromScope(s MemoryScope, prompt string) (string, MemoryQuery) {
 		}
 	case MemoryScopeFull:
 		return prompt, MemoryQuery{Limit: 20}
-	default: // MemoryScopeNone — caller shouldn't reach here, but be safe.
+	default: // MemoryScopeNone - caller shouldn't reach here, but be safe.
 		return "", MemoryQuery{}
 	}
 }
@@ -821,7 +821,7 @@ func injectMemory(c Call, records []Record) Call {
 }
 
 // recordEpisode stores an Episodic record summarising this Call.
-// Summaries keep content raw (no LLM-summarisation) — the
+// Summaries keep content raw (no LLM-summarisation) - the
 // MemMachine-inspired "raw is queen" policy from Pass 2 applies
 // here too. Response.Text is truncated to 500 chars for the trace
 // body, which is enough to re-recognise the interaction later

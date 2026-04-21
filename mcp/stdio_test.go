@@ -85,7 +85,7 @@ func TestStdioIntegrationEchoServer(t *testing.T) {
 func TestStdioSubprocessCrashDisconnects(t *testing.T) {
 	// Spawn /bin/cat, which stays alive forever reading stdin. It
 	// won't respond to initialize, so Connect will fail. That's fine
-	// for this test — we just want to exercise the error path.
+	// for this test - we just want to exercise the error path.
 	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer cancel()
 	_, err := Connect(ctx, []string{"/bin/cat"}, WithLogger(discardLogger()), WithInitTimeout(200*time.Millisecond))

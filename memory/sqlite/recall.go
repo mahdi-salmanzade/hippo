@@ -22,7 +22,7 @@ import (
 //
 // Changing these constants changes ranking for every query, so
 // promotions to the public surface should happen behind an Option;
-// for v0.2 they're tuned defaults.
+// for v1.0 they're tuned defaults.
 const (
 	workingHalfLifeHours  = 24.0     // Working memory fades over a day
 	episodicHalfLifeHours = 720.0    // Episodic fades over 30 days
@@ -41,7 +41,7 @@ const (
 // Kind-specific half-lives are encoded as a CASE so one query handles
 // all three kinds. Profile records bypass decay entirely.
 // access_count is NULL on pre-Pass-11 rows until the first Recall
-// bumps it — COALESCE keeps the arithmetic safe either way.
+// bumps it - COALESCE keeps the arithmetic safe either way.
 const effectiveImportanceExpr = `
 (importance *
   CASE kind
@@ -54,7 +54,7 @@ const effectiveImportanceExpr = `
 
 // scoredRecord pairs a Record with a ranking score and, for hybrid
 // recall, the unblended keyword/semantic components used to compute
-// it. Kept inside this file — external callers don't need it.
+// it. Kept inside this file - external callers don't need it.
 type scoredRecord struct {
 	rec       hippo.Record
 	embedding []float32
@@ -268,7 +268,7 @@ func (s *store) scanSemanticOnly(ctx context.Context, queryVec []float32, q hipp
 		return nil, err
 	}
 
-	// Score each by cosine and keep the ones above a small threshold —
+	// Score each by cosine and keep the ones above a small threshold -
 	// cosine results for unrelated records tend to cluster around ~0.
 	out := rows[:0]
 	for _, r := range rows {
@@ -355,7 +355,7 @@ func (s *store) recallTimeWindow(ctx context.Context, lower, upper time.Time, q 
 		WHERE m.timestamp BETWEEN ? AND ?`, effectiveImportanceExpr)
 
 	// Re-apply Kinds and Tags but NOT Since/Until (we just scoped by
-	// our own window). Also skip MinImportance — neighbors take the
+	// our own window). Also skip MinImportance - neighbors take the
 	// hit's score directly.
 	qWindow := hippo.MemoryQuery{Kinds: q.Kinds, Tags: q.Tags}
 	applyCommonFilters(&sb, &args, qWindow)
@@ -428,7 +428,7 @@ const (
 //   id, kind, timestamp(ns), content, importance, embedding_bytes,
 //   keyword_score, effective_importance
 //
-// scanScored applies no filter on q.MinImportance itself — the caller
+// scanScored applies no filter on q.MinImportance itself - the caller
 // passes that through q on the wrapper function and scanScored
 // discards rows whose effective importance falls below the cutoff.
 func (s *store) scanScored(ctx context.Context, query string, args []any, mode scanMode) ([]scoredRecord, error) {
@@ -499,7 +499,7 @@ func clamp01(v float64) float64 {
 }
 
 // markAccessed updates last_accessed and bumps access_count for the
-// supplied IDs. Runs best-effort — a failure is logged at Warn but
+// supplied IDs. Runs best-effort - a failure is logged at Warn but
 // doesn't fail Recall.
 func (s *store) markAccessed(ctx context.Context, ids []string) {
 	if len(ids) == 0 {

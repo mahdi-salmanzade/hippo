@@ -154,7 +154,7 @@ func TestWithPricingOverride(t *testing.T) {
 
 func TestPricingLookupOllamaZeroCostFallsThrough(t *testing.T) {
 	p := DefaultPricing()
-	// Registered Ollama model — exact hit with real context window.
+	// Registered Ollama model - exact hit with real context window.
 	r, ok := p.Lookup("ollama", "llama3.3:70b")
 	if !ok {
 		t.Fatal("ollama llama3.3:70b not resolved")
@@ -166,7 +166,7 @@ func TestPricingLookupOllamaZeroCostFallsThrough(t *testing.T) {
 		t.Errorf("ollama rates = %+v, want all zero", r)
 	}
 
-	// Unregistered Ollama model — zero_cost fallback kicks in, ok=true
+	// Unregistered Ollama model - zero_cost fallback kicks in, ok=true
 	// with zero values so budget.Charge records $0 rather than warning.
 	r2, ok2 := p.Lookup("ollama", "some-random-model-the-user-pulled:latest")
 	if !ok2 {
@@ -177,7 +177,7 @@ func TestPricingLookupOllamaZeroCostFallsThrough(t *testing.T) {
 	}
 
 	// Unregistered model for a non-zero-cost provider still returns
-	// ok=false — the fallback is ollama-specific.
+	// ok=false - the fallback is ollama-specific.
 	if _, ok := p.Lookup("anthropic", "no-such-model"); ok {
 		t.Error("anthropic unknown model returned ok=true; zero-cost semantics should not apply")
 	}

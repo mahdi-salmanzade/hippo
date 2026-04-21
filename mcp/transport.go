@@ -71,7 +71,7 @@ func (p *pendingRegistry) cancel(id string) {
 
 // deliver routes an inbound response to the waiting channel. Unknown
 // ids (response arrived after ctx cancel, or a notification the
-// server sent back with an id) are dropped silently — the response
+// server sent back with an id) are dropped silently - the response
 // would have been discarded anyway.
 func (p *pendingRegistry) deliver(msg *jsonrpcMessage) bool {
 	id := idString(msg.ID)

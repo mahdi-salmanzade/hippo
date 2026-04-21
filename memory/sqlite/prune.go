@@ -10,7 +10,7 @@ import (
 )
 
 // PruneConfig controls the auto-prune worker. Profile records are
-// never pruned — user-facing profile facts are considered ground
+// never pruned - user-facing profile facts are considered ground
 // truth; applications that want to drop them can call Add/Delete
 // themselves.
 type PruneConfig struct {
@@ -81,7 +81,7 @@ func (s *store) StartAutoPrune(ctx context.Context, cfg PruneConfig, interval ti
 	return stop, nil
 }
 
-// pruneOnce applies cfg once. Separated for testability — tests can
+// pruneOnce applies cfg once. Separated for testability - tests can
 // call this directly without spinning up a ticker.
 func (s *store) pruneOnce(ctx context.Context, cfg PruneConfig) error {
 	if cfg.WorkingMaxAge > 0 {

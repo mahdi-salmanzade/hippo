@@ -345,7 +345,7 @@ func TestCallHandlesUnknownTool(t *testing.T) {
 
 func TestCallRespectsMaxToolHops(t *testing.T) {
 	p := newScripted()
-	// Every turn returns another tool call — the loop must stop at
+	// Every turn returns another tool call - the loop must stop at
 	// the cap and still return the final turn's response.
 	never := &Response{
 		Text:      "",
@@ -362,7 +362,7 @@ func TestCallRespectsMaxToolHops(t *testing.T) {
 	if !errors.Is(resp.Err, ErrMaxToolHopsExceeded) {
 		t.Errorf("Response.Err = %v, want ErrMaxToolHopsExceeded", resp.Err)
 	}
-	// Tool should have run exactly maxToolHops times (2) — the
+	// Tool should have run exactly maxToolHops times (2) - the
 	// third turn's tool calls are never executed because we bail
 	// out before the execute step.
 	if got := tool.calls.Load(); got != 2 {
@@ -787,7 +787,7 @@ drain:
 		time.Sleep(20 * time.Millisecond)
 		break
 	}
-	// Lenient — this test's primary assertion is channel close.
+	// Lenient - this test's primary assertion is channel close.
 }
 
 func TestStreamToolResultOrderingGuarantee(t *testing.T) {

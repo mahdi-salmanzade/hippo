@@ -7,7 +7,7 @@ name: Release
 # statically-linked single binaries.
 #
 # The tag message (or auto-generated commit list) becomes the release
-# notes; we keep the workflow simple on purpose — the changelog lives
+# notes; we keep the workflow simple on purpose - the changelog lives
 # in CHANGELOG.md and is the source of truth for human-readable
 # release notes.
 

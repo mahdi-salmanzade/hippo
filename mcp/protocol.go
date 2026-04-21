@@ -5,7 +5,7 @@
 //
 // # Scope
 //
-// Tools only — hippo's MCP integration in v0.1.0 does not expose
+// Tools only - hippo's MCP integration in v0.1.0 does not expose
 // prompts or resources. Notifications (tools/list_changed) are not
 // subscribed to; tool lists refresh on each reconnect instead.
 //
@@ -34,8 +34,8 @@ import (
 )
 
 // ProtocolVersion is the MCP revision hippo targets. Servers on older
-// versions still work — MCP is deliberately loose about version
-// matching — but a Warn log is emitted if the server reports a
+// versions still work - MCP is deliberately loose about version
+// matching - but a Warn log is emitted if the server reports a
 // different version on initialize.
 const ProtocolVersion = "2025-06-18"
 
@@ -47,7 +47,7 @@ const clientName = "hippo"
 
 // ClientVersion is the version string hippo sends on initialize.
 // Callers (typically the root hippo package) may override this at
-// startup — for example, the web package sets it from the binary's
+// startup - for example, the web package sets it from the binary's
 // build-time ldflags.
 var ClientVersion = "dev"
 
@@ -78,7 +78,7 @@ type jsonrpcError struct {
 	Data    json.RawMessage `json:"data,omitempty"`
 }
 
-// Error makes jsonrpcError satisfy the error interface — useful when
+// Error makes jsonrpcError satisfy the error interface - useful when
 // surfacing server-side failures through Go's error chain.
 func (e *jsonrpcError) Error() string {
 	return fmt.Sprintf("mcp: server error %d: %s", e.Code, e.Message)
@@ -136,7 +136,7 @@ func idString(raw *json.RawMessage) string {
 }
 
 // MCP-specific payloads follow. Only the bits hippo actually uses are
-// modelled — capability negotiation is declared as empty client
+// modelled - capability negotiation is declared as empty client
 // capabilities, and resources/prompts are ignored.
 
 type initializeParams struct {

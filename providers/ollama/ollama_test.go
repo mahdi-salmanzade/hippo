@@ -80,14 +80,14 @@ func TestModelsFetchedFromServer(t *testing.T) {
 		t.Errorf("models[0].ID = %q, want llama3.3:70b", models[0].ID)
 	}
 	// ContextTokens should come from pricing.yaml for registered
-	// models — 131072 for llama3.3:70b.
+	// models - 131072 for llama3.3:70b.
 	if models[0].ContextTokens != 131072 {
 		t.Errorf("llama3.3:70b ContextTokens = %d, want 131072", models[0].ContextTokens)
 	}
 }
 
 func TestModelsUnreachableServerReturnsEmpty(t *testing.T) {
-	// Point at a closed port — Dial fails fast.
+	// Point at a closed port - Dial fails fast.
 	pr, _ := New(WithBaseURL("http://127.0.0.1:1"))
 	models := pr.Models()
 	if len(models) != 0 {
@@ -116,7 +116,7 @@ func TestModelsCached(t *testing.T) {
 func TestModelsUnknownIDGetsFallbackContext(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("content-type", "application/json")
-		// Model id not in pricing.yaml — should fall back to 8192.
+		// Model id not in pricing.yaml - should fall back to 8192.
 		io.WriteString(w, `{"models":[{"name":"phi4:14b","model":"phi4:14b"}]}`)
 	}))
 	t.Cleanup(server.Close)

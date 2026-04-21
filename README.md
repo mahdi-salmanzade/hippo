@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="./hippo.png" alt="hippo - local-first LLM routing + memory" width="520">
+</p>
+
 # hippo
 
 **A single-binary Go LLM client with memory, cost-awareness, and MCP.**
@@ -13,9 +17,11 @@ typed memory in SQLite; enforces a USD budget; and speaks Model Context
 Protocol out of the box. Everything ships in one 19 MB binary, CGO-free,
 with a minimum dependency tree.
 
-> **Status: v0.2.0 — alpha.** Semantic memory, nucleus retrieval, and
-> auto-prune all shipped in v0.2; the public API may still change in
-> breaking ways before v1.0. See the [changelog](./CHANGELOG.md).
+> **Status: v1.0.0-beta.** Providers, streaming, tools, MCP, typed
+> memory with semantic recall, cost-aware routing, and the embedded
+> web UI are all in. The public API is frozen pending a final v1.0
+> tag - breaking changes now require a deprecation cycle. See the
+> [changelog](./CHANGELOG.md).
 
 ## Quick start (library)
 
@@ -44,7 +50,7 @@ func main() {
         Task:   hippo.TaskGenerate,
         Prompt: "Say hi in two words.",
     })
-    fmt.Println(resp.Text, "—", resp.Model, "— $", resp.CostUSD)
+    fmt.Println(resp.Text, "-", resp.Model, "- $", resp.CostUSD)
 }
 ```
 
@@ -84,11 +90,11 @@ folds tool calls and thinking traces into one event stream.
 Memory is working / episodic / profile, not an undifferentiated vector
 blob. Records carry kind, tags, importance, and an optional embedding.
 The SQLite backend uses FTS5 for keyword recall and pure-Go cosine
-similarity over stored vectors for semantic recall — no ANN index
-dependency for the v0.2 scale (up to ~10K records).
+similarity over stored vectors for semantic recall - no ANN index
+dependency at the v1.0 scale (up to ~10K records).
 
 ```go
-// Local embedder via Ollama — no cloud key required.
+// Local embedder via Ollama - no cloud key required.
 emb := ollama.NewEmbedder(ollama.WithEmbedderModel("nomic-embed-text"))
 store, _ := sqlite.Open("~/.hippo/memory.db", sqlite.WithEmbedder(emb))
 
@@ -144,7 +150,7 @@ tool-call loop.
 b, _ := hippo.New(hippo.WithProvider(p), hippo.WithTools(weatherTool, searchTool))
 ```
 
-Or connect a Model Context Protocol server — stdio or Streamable HTTP —
+Or connect a Model Context Protocol server - stdio or Streamable HTTP -
 and its tools surface automatically:
 
 ```go
@@ -161,7 +167,7 @@ a warning. Reconnect with exponential backoff runs in the background.
 ### Single-binary UI
 
 `hippo serve` embeds templates, CSS, htmx, and static assets via
-`go:embed` — no Node, no npm, no build step. Provider credentials,
+`go:embed` - no Node, no npm, no build step. Provider credentials,
 routing policy, MCP servers, and spend dashboards all edit in the
 browser.
 
@@ -178,30 +184,30 @@ browser.
 | Dependencies | 1 (SQLite) + YAML | minimal | huge | large |
 
 Respect to each project; they shaped hippo's design. hippo's wedge is the
-combination — memory + cost + tools + MCP — packaged as one binary.
+combination - memory + cost + tools + MCP - packaged as one binary.
 
 ## Examples
 
-- [`examples/basic`](./examples/basic) — minimal single-provider Call
-- [`examples/streaming`](./examples/streaming) — streaming with SSE
-- [`examples/memory`](./examples/memory) — persist and retrieve across calls
-- [`examples/semantic`](./examples/semantic) — semantic + hybrid + nucleus recall
-- [`examples/routing`](./examples/routing) — YAML policy across three providers
-- [`examples/tools`](./examples/tools) — parallel local tool execution
-- [`examples/mcp`](./examples/mcp) — MCP server tools via Anthropic
+- [`examples/basic`](./examples/basic) - minimal single-provider Call
+- [`examples/streaming`](./examples/streaming) - streaming with SSE
+- [`examples/memory`](./examples/memory) - persist and retrieve across calls
+- [`examples/semantic`](./examples/semantic) - semantic + hybrid + nucleus recall
+- [`examples/routing`](./examples/routing) - YAML policy across three providers
+- [`examples/tools`](./examples/tools) - parallel local tool execution
+- [`examples/mcp`](./examples/mcp) - MCP server tools via Anthropic
 
 ## Docs
 
-- [Install guide](./docs/INSTALL.md) — paths, prerequisites, troubleshooting
-- [Contributing](./docs/CONTRIBUTING.md) — local workflow, PR checklist
-- [Changelog](./CHANGELOG.md) — release history
-- [QUESTIONS.md](./QUESTIONS.md) — design decision record
+- [Install guide](./docs/INSTALL.md) - paths, prerequisites, troubleshooting
+- [Contributing](./docs/CONTRIBUTING.md) - local workflow, PR checklist
+- [Changelog](./CHANGELOG.md) - release history
+- [QUESTIONS.md](./QUESTIONS.md) - design decision record
 
 ## Roadmap
 
-- **v0.3** — Gemini + OpenRouter providers, per-conversation memory
+- **v1.0** - stabilise the beta API, ship final docs, cut the tag.
+- **v1.1** - Gemini + OpenRouter providers, per-conversation memory
   scoping, MCP prompts and resources, extra CLI subcommands.
-- **v1.0** — API freeze.
 
 ## Credits
 
@@ -210,6 +216,9 @@ hippo's design borrows ideas from
 [mem0](https://github.com/mem0ai/mem0), and
 [MemMachine](https://github.com/memmachine-ai/memmachine). None of them are
 bundled; the debt is intellectual.
+
+Special thanks to **Claude Code - Opus 4.7** for pair-programming across the
+codebase, and to **Claude Design** for the logo and visual identity.
 
 ## License
 

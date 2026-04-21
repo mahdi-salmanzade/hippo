@@ -299,7 +299,7 @@ func TestConnectTimesOutOnStalledInitialize(t *testing.T) {
 		t.Fatal("expected timeout error")
 	}
 	if !errors.Is(err, context.DeadlineExceeded) {
-		// initialize wraps with "mcp: initialize: …" — check the
+		// initialize wraps with "mcp: initialize: …" - check the
 		// message path too, since errors.Is on the wrapped form may
 		// or may not unwrap depending on wrap helper.
 		if !strings.Contains(err.Error(), "context deadline") {

@@ -239,7 +239,7 @@ func TestCallHonorsContextCancel(t *testing.T) {
 	// case (connection closed mid-request → server context cancels),
 	// with a short fallback so test teardown doesn't stall. Note:
 	// Go's server does not reliably cancel r.Context() during an
-	// in-flight handler when the client cancels — it's cancelled
+	// in-flight handler when the client cancels - it's cancelled
 	// after the handler returns. The fallback is what actually
 	// bounds cleanup time in practice.
 	const handlerFallback = 300 * time.Millisecond
@@ -271,7 +271,7 @@ func TestCallHonorsContextCancel(t *testing.T) {
 		t.Errorf("err = %v, want wrapping context.Canceled", err)
 	}
 	// Client-side cancellation must be fast regardless of what the
-	// server does — the client does not wait for the server to
+	// server does - the client does not wait for the server to
 	// acknowledge.
 	if elapsed > 200*time.Millisecond {
 		t.Errorf("Call took %v, expected < 200ms (client-side cancel should be immediate)", elapsed)

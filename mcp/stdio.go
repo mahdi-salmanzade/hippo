@@ -203,7 +203,7 @@ func (t *stdioTransport) readLoop() {
 		}
 		if msg.ID == nil && msg.Method != "" {
 			// Server notification. We don't subscribe to any in
-			// v0.1.0 — drop and log at Debug.
+			// v0.1.0 - drop and log at Debug.
 			t.log.Debug("mcp: stdio ignoring notification", "method", msg.Method)
 			continue
 		}

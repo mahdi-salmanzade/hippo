@@ -113,7 +113,7 @@ func (p *provider) Privacy() hippo.PrivacyTier { return hippo.PrivacyCloudOK }
 
 // EstimateCost returns a pre-flight USD estimate for c. It uses a
 // rough len/4 heuristic for input tokens and assumes max_tokens output,
-// which is enough for a router's budget-feasibility check — the actual
+// which is enough for a router's budget-feasibility check - the actual
 // cost after a Call is computed from the server-reported usage.
 func (p *provider) EstimateCost(c hippo.Call) (float64, error) {
 	model := p.model
@@ -317,7 +317,7 @@ func (p *provider) Stream(ctx context.Context, c hippo.Call) (<-chan hippo.Strea
 //     stay as a bare string.
 //   - role:"tool" messages become user turns carrying tool_result
 //     content blocks (with tool_use_id matching the earlier call).
-//     Anthropic has no "tool" role on the wire — tool outputs are
+//     Anthropic has no "tool" role on the wire - tool outputs are
 //     always user turns shaped as tool_result blocks.
 //   - other messages (plain user, plain assistant) serialise as a
 //     bare string for the cheapest possible payload.
@@ -483,7 +483,7 @@ var retryBaseDelay = 1 * time.Second
 
 // doWithRetry POSTs reqBody to /v1/messages, retrying on 429 and 5xx
 // with exponential backoff (1s, 2s) up to 3 attempts total. Network
-// errors are not retried — they return immediately, wrapping ctx errors
+// errors are not retried - they return immediately, wrapping ctx errors
 // when the context is the cause.
 func (p *provider) doWithRetry(ctx context.Context, reqBody []byte) (int, []byte, error) {
 	const maxAttempts = 3

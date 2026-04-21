@@ -12,7 +12,7 @@ import (
 
 // ollamaReachable returns true when a local Ollama daemon answers
 // /api/version within 2 seconds at the default base URL. Used to
-// auto-skip integration tests when a daemon isn't running — distinct
+// auto-skip integration tests when a daemon isn't running - distinct
 // from HIPPO_RUN_INTEGRATION, which is the explicit opt-in.
 func ollamaReachable(baseURL string) bool {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)

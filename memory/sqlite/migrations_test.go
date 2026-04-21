@@ -85,7 +85,7 @@ func TestMigrateIsIdempotent(t *testing.T) {
 	}
 	_ = m.Close()
 
-	// Reopen — migrate() should notice everything's already applied.
+	// Reopen - migrate() should notice everything's already applied.
 	m2, err := Open(dst)
 	if err != nil {
 		t.Fatalf("reopen: %v", err)
@@ -109,7 +109,7 @@ func TestReconcileV1LegacyDetectsLegacy(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Create the memories table by hand — no schema_version — then
+	// Create the memories table by hand - no schema_version - then
 	// close, reopen through Open() to trigger migration.
 	if _, err := db.Exec(`CREATE TABLE memories (id TEXT PRIMARY KEY, kind TEXT, timestamp INTEGER, content TEXT, importance REAL, metadata TEXT, created_at INTEGER)`); err != nil {
 		t.Fatal(err)

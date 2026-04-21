@@ -16,7 +16,7 @@ const defaultRecentCap = 100
 // State is the in-process bookkeeping for the web server: completed
 // calls for the recent-calls ring, aggregated spend by provider/task,
 // plus a session map for streaming chat turns. It is kept outside the
-// hippo.Brain by design — Brain stays ignorant of the UI so the library
+// hippo.Brain by design - Brain stays ignorant of the UI so the library
 // core remains reusable without pulling the web package in.
 type State struct {
 	mu       sync.RWMutex

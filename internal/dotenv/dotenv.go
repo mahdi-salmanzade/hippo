@@ -5,7 +5,7 @@
 //
 // Dotenv semantics: values already set in the process environment are
 // preserved (CI and production win over a developer's .env). Missing
-// .env is not an error — Load returns nil so callers can invoke it
+// .env is not an error - Load returns nil so callers can invoke it
 // unconditionally.
 package dotenv
 

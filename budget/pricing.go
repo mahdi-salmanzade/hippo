@@ -70,7 +70,7 @@ type ModelPricing struct {
 
 // Lookup returns the ModelPricing for (provider, model). If the exact
 // model id is not registered, Lookup falls back to the longest
-// registered key that is a prefix of model — this is how we tolerate
+// registered key that is a prefix of model - this is how we tolerate
 // dated variants like "claude-haiku-4-5-20250930" that the Anthropic
 // API echoes back, or "gpt-5-2026-02-15" from OpenAI.
 //
@@ -134,7 +134,7 @@ var (
 // DefaultPricing returns the table parsed from the embedded
 // pricing.yaml. Parsed once and memoised; subsequent calls return the
 // same pointer. The returned *PricingTable is safe for concurrent
-// reads but must not be mutated — construct a fresh copy via
+// reads but must not be mutated - construct a fresh copy via
 // ParsePricing if you need to edit.
 func DefaultPricing() *PricingTable {
 	defaultOnce.Do(func() {

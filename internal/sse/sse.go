@@ -6,7 +6,7 @@
 // fields, blank-line-terminated events, comment lines, CRLF and LF
 // line endings) to parse the event streams Anthropic, OpenAI, and
 // future providers emit from their /messages and /responses endpoints.
-// retry-field support is deliberately omitted — no hippo provider
+// retry-field support is deliberately omitted - no hippo provider
 // uses it, and the http.Client reconnect-on-failure shape isn't how
 // hippo handles mid-stream failures anyway (see provider docs).
 //
@@ -91,7 +91,7 @@ func (s *Scanner) Next(ctx context.Context) (*Event, error) {
 		}
 
 		// Blank line terminates the event. Only emit if we accumulated
-		// at least one field — successive blank lines, or a stream
+		// at least one field - successive blank lines, or a stream
 		// that starts with a blank, should not yield an empty event.
 		if len(line) == 0 {
 			if !haveAnyField {
@@ -136,7 +136,7 @@ func (s *Scanner) Next(ctx context.Context) (*Event, error) {
 
 	// Graceful end of stream. If the stream ended without a trailing
 	// blank line but we have buffered field data, emit one last event
-	// — some providers omit the final terminator.
+	// - some providers omit the final terminator.
 	if haveAnyField {
 		ev.Data = append([]byte(nil), s.dataBuf.Bytes()...)
 		return &ev, nil

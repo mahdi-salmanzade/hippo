@@ -81,7 +81,7 @@ func parseMCPForm(r *http.Request) MCPConfig {
 }
 
 // splitCommand breaks a user-entered command on whitespace, honoring
-// simple "quoted args". A full shell parse is overkill — this mirrors
+// simple "quoted args". A full shell parse is overkill - this mirrors
 // what strings.Fields does plus a single level of double-quote
 // tolerance so users can type `echo "hello world"`.
 func splitCommand(s string) []string {
@@ -118,7 +118,7 @@ func splitCommand(s string) []string {
 // matches bundle construction (10s).
 //
 // The form uses either flat ("name", "transport", "command", "prefix")
-// or row-indexed ("mcp_name_N", …) field names — the config page's
+// or row-indexed ("mcp_name_N", …) field names - the config page's
 // htmx include copies the row's existing inputs rather than requiring
 // a separate hidden mirror.
 func (s *Server) handleMCPTest(w http.ResponseWriter, r *http.Request) {

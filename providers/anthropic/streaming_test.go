@@ -29,7 +29,7 @@ func writeSSE(w io.Writer, name, data string) {
 
 // streamHandler builds an http.HandlerFunc that writes the given
 // sequence of (event, data) pairs to the response body. Each pair is
-// flushed so the client sees real incremental events — any test that
+// flushed so the client sees real incremental events - any test that
 // asserts chunk order relies on this.
 func streamHandler(events [][2]string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -197,7 +197,7 @@ func TestStreamReassemblesToolCall(t *testing.T) {
 }
 
 func TestStreamHandlesMultipleToolCalls(t *testing.T) {
-	// Two tool_use blocks on different content-block indices —
+	// Two tool_use blocks on different content-block indices -
 	// Anthropic's documented parallel-call shape. The accumulators
 	// must not collide; order is preserved.
 	events := [][2]string{

@@ -43,7 +43,7 @@ type httpTransport struct {
 }
 
 // startHTTPTransport builds a httpTransport. Does not perform any
-// network I/O — the Client drives the initialize handshake.
+// network I/O - the Client drives the initialize handshake.
 func startHTTPTransport(url string, headers http.Header, log *slog.Logger) *httpTransport {
 	h := &httpTransport{
 		url:     url,

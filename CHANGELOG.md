@@ -3,7 +3,23 @@
 All notable changes are recorded here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/). Semantic versioning.
 
-## v0.2.0 — 2026-04-19
+## v1.0.0-beta - 2026-04-21
+
+Beta promotion. No functional changes from v0.2.0 - this tag freezes
+the public API ahead of the v1.0 cut. Breaking changes from here on
+require a deprecation cycle.
+
+### Changed
+
+- Version string bumped from `0.2.0` to `1.0.0-beta` across the CLI,
+  web UI footer, and MCP initialize handshake.
+- README, roadmap, and in-code decision comments re-scoped from "v0.2
+  tuned defaults" to "v1.0 tuned defaults".
+- Roadmap: v1.0 → API freeze + final docs; deferred-provider work
+  (Gemini, OpenRouter) and per-conversation memory scoping moved to
+  v1.1.
+
+## v0.2.0 - 2026-04-19
 
 Semantic memory and operational hygiene.
 
@@ -15,8 +31,8 @@ Semantic memory and operational hygiene.
 - **Vector recall.** `MemoryQuery.Semantic`, `HybridWeight`, and
   `TemporalExpansion` flags enable cosine-similarity scoring over
   stored embeddings, with FTS5 keyword signal blended at a
-  caller-chosen weight. Pure-Go cosine — no ANN dependency.
-- **Nucleus temporal expansion** — each semantic hit pulls in records
+  caller-chosen weight. Pure-Go cosine - no ANN dependency.
+- **Nucleus temporal expansion** - each semantic hit pulls in records
   within ±TemporalExpansion of its timestamp at half-score, so a
   conversation-adjacent turn isn't left behind just because it
   doesn't individually match the query.
@@ -34,7 +50,7 @@ Semantic memory and operational hygiene.
 - **Migration framework.** Versioned schema with `schema_version`
   table; v0.1.0 databases migrate in-place without data loss.
   Repopulates FTS5 for pre-Pass-2 installations that skipped it.
-- **Web UI `/memory` page** — browse, keyword / semantic / hybrid /
+- **Web UI `/memory` page** - browse, keyword / semantic / hybrid /
   recent search, paginated; sidebar shows live backfill progress and
   a manual-prune button; per-record delete.
 - **Example** `examples/semantic/main.go` demonstrating hybrid +
@@ -63,38 +79,38 @@ Semantic memory and operational hygiene.
 
 ### Binary size
 
-- 19 MB CGO-off (unchanged from v0.1.0 — no new dependencies).
+- 19 MB CGO-off (unchanged from v0.1.0 - no new dependencies).
 
-## v0.1.0 — 2026-04-19
+## v0.1.0 - 2026-04-19
 
 Initial release. Single-binary Go LLM client with:
 
-- **Providers** — Anthropic (Messages API), OpenAI (Responses API), Ollama.
+- **Providers** - Anthropic (Messages API), OpenAI (Responses API), Ollama.
 - **Streaming** across all providers with unified `StreamChunk` events
   and tool-call reassembly.
-- **Tools** — plug-and-play local tool registration with parallel execution,
+- **Tools** - plug-and-play local tool registration with parallel execution,
   tool-hop cap, panic recovery, and structured errors fed back to the LLM.
-- **MCP client** — stdio and Streamable HTTP transports, targeting
+- **MCP client** - stdio and Streamable HTTP transports, targeting
   protocol `2025-06-18`, with exponential-backoff reconnect.
-- **Memory** — SQLite backend with FTS5 keyword search and typed kinds
+- **Memory** - SQLite backend with FTS5 keyword search and typed kinds
   (working / episodic / profile); schema auto-migrated on `Open`.
-- **Routing** — YAML policy with hot-reload, privacy-tier enforcement,
+- **Routing** - YAML policy with hot-reload, privacy-tier enforcement,
   per-task cost caps.
-- **Budget** — consolidated pricing table, per-call estimate, running
+- **Budget** - consolidated pricing table, per-call estimate, running
   spend accounting.
-- **Web UI** — embedded via `go:embed` (htmx, no Node toolchain);
+- **Web UI** - embedded via `go:embed` (htmx, no Node toolchain);
   localhost-only by default with token auth for network bindings; chat,
   spend dashboard, config, policy editor, MCP server management.
-- **CLI** — `hippo serve`, `hippo init`, `hippo version`.
+- **CLI** - `hippo serve`, `hippo init`, `hippo version`.
 
 Built during April 17–19, 2026.
 
 ### Known limitations
 
-- No semantic memory — keyword FTS5 only. Embeddings targeted for v0.2.
+- No semantic memory - keyword FTS5 only. Embeddings targeted for v0.2.
 - Gemini and OpenRouter providers are scaffolded in `providers/` but
   not implemented.
-- MCP prompts and resources aren't supported — tools only.
+- MCP prompts and resources aren't supported - tools only.
 - Web UI has no markdown rendering or syntax highlighting in chat.
 - Config YAML round-trip strips inline comments; a fixed header is
   regenerated on every save. See QUESTIONS.md Q9.1.

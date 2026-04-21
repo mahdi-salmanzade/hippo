@@ -32,7 +32,7 @@ func fakeForm(fields map[string]string) *http.Request {
 }
 
 // freshServer builds a Server wired to a throw-away config file. Used
-// by handler tests — the server isn't actually Start'd because the
+// by handler tests - the server isn't actually Start'd because the
 // tests exercise the mux directly via httptest.
 func freshServer(t *testing.T) *Server {
 	t.Helper()

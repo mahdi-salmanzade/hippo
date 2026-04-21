@@ -8,7 +8,7 @@ go 1.23.0
 // break the CI matrix (1.23, 1.24) and lock out users on slightly
 // older toolchains.
 //
-// Unpin when the v0.2 cycle bumps our floor to 1.25.
+// Unpin when the v1.x cycle bumps our floor to 1.25.
 require modernc.org/sqlite v1.36.1
 
 require gopkg.in/yaml.v3 v3.0.1

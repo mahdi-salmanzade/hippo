@@ -12,7 +12,7 @@ import (
 )
 
 // openFileMem returns a file-backed store (not :memory:) so concurrent
-// connections can all see inserted rows — needed for the backfill
+// connections can all see inserted rows - needed for the backfill
 // race test.
 func openFileMem(t *testing.T, opts ...Option) *store {
 	t.Helper()
@@ -122,11 +122,11 @@ func TestAutoPruneDeletesOldWorking(t *testing.T) {
 	s := openFileMem(t)
 	ctx := context.Background()
 
-	// Old Working record — should be deleted by the rule.
+	// Old Working record - should be deleted by the rule.
 	_ = s.Add(ctx, &hippo.Record{
 		Kind: hippo.MemoryWorking, Content: "expired", Timestamp: time.Now().Add(-30 * 24 * time.Hour),
 	})
-	// Fresh one — survives.
+	// Fresh one - survives.
 	_ = s.Add(ctx, &hippo.Record{
 		Kind: hippo.MemoryWorking, Content: "fresh", Timestamp: time.Now(),
 	})

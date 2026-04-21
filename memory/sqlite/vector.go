@@ -7,7 +7,7 @@ import (
 )
 
 // encodeEmbedding packs a float32 slice into little-endian bytes for
-// storage in a BLOB column. 4 bytes per element, no header — the
+// storage in a BLOB column. 4 bytes per element, no header - the
 // column has no use for a length prefix because SQLite already tells
 // us the byte length on scan.
 func encodeEmbedding(v []float32) []byte {
@@ -22,7 +22,7 @@ func encodeEmbedding(v []float32) []byte {
 }
 
 // decodeEmbedding unpacks bytes produced by encodeEmbedding. Returns
-// an error if the byte length isn't a multiple of 4 — that would mean
+// an error if the byte length isn't a multiple of 4 - that would mean
 // the BLOB was written by something other than encodeEmbedding or
 // the database is corrupted.
 func decodeEmbedding(b []byte) ([]float32, error) {

@@ -90,7 +90,7 @@ func WithInitTimeout(d time.Duration) Option {
 }
 
 // WithReconnect configures the auto-reconnect loop. enabled=false
-// disables reconnection entirely — Tools() returns an empty slice
+// disables reconnection entirely - Tools() returns an empty slice
 // after the transport dies. Otherwise the loop uses exponential
 // backoff from baseDelay, capped at maxDelay.
 func WithReconnect(enabled bool, baseDelay, maxDelay time.Duration) Option {
@@ -106,7 +106,7 @@ func WithReconnect(enabled bool, baseDelay, maxDelay time.Duration) Option {
 }
 
 // newClient builds a Client with defaults and applies options. Does
-// not perform any I/O — Connect / ConnectHTTP do that.
+// not perform any I/O - Connect / ConnectHTTP do that.
 func newClient(opts ...Option) *Client {
 	c := &Client{
 		log:              slog.New(slog.NewTextHandler(io.Discard, nil)),
@@ -217,7 +217,7 @@ func (c *Client) handshake(ctx context.Context) error {
 	serverTools, err := c.sendToolsList(initCtx, tr)
 	if err != nil {
 		// A server that doesn't support tools shouldn't fail the
-		// whole connection — the Client is still valid for future
+		// whole connection - the Client is still valid for future
 		// capability discovery. Log and continue with zero tools.
 		c.log.Warn("mcp: tools/list failed; continuing with empty tool set",
 			"server", info.ServerInfo.Name, "err", err)

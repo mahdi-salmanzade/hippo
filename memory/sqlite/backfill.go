@@ -98,7 +98,7 @@ func (s *store) StartBackfill(ctx context.Context, cfg BackfillConfig) (func(), 
 	return stop, nil
 }
 
-// tick runs one wake-up's worth of backfill work — up to MaxPerRun
+// tick runs one wake-up's worth of backfill work - up to MaxPerRun
 // records processed in batches of BatchSize.
 func (w *backfillWorker) tick(ctx context.Context) {
 	w.store.lastBackfillRunning.Store(true)

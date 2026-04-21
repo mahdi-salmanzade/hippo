@@ -1,4 +1,4 @@
-// hippo web UI — small vanilla-JS layer for interactions that don't
+// hippo web UI - small vanilla-JS layer for interactions that don't
 // fit cleanly into server-rendered HTML: chat streaming, sticky-save
 // dirty tracking, flash auto-dismiss, API-key show/hide, policy line
 // numbering. No framework.
