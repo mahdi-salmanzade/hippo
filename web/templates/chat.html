@@ -1,47 +1,96 @@
-<h1>Chat playground</h1>
-
 {{if not .Data.Providers}}
-<p class="hint">No providers configured. <a href="/config">Add credentials →</a></p>
+<h1 class="page-title">Chat</h1>
+<p class="page-sub">No providers configured yet.</p>
+<div class="card">
+  <p>Add credentials on the <a href="/config">Config page</a> to start routing.</p>
+</div>
 {{else}}
 <div class="chat">
-  <div class="controls">
-    <label>Provider
-      <select id="provider">
+  <div class="chat-controls">
+    <label class="inline-field">
+      <span class="label">Provider</span>
+      <select id="provider" class="compact">
         {{range .Data.Providers}}
         <option value="{{.Name}}" data-default-model="{{.DefaultModel}}">{{.DisplayName}}</option>
         {{end}}
       </select>
     </label>
-    <label>Model
-      <select id="model">
+    <label class="inline-field">
+      <span class="label">Model</span>
+      <select id="model" class="compact">
         {{range (index .Data.Providers 0).Models}}
         <option value="{{.}}">{{.}}</option>
         {{end}}
       </select>
     </label>
-    <label>Task
-      <select id="task">
+    <label class="inline-field">
+      <span class="label">Task</span>
+      <select id="task" class="compact">
         {{range .Data.Tasks}}
         <option value="{{.}}" {{if eq . "generate"}}selected{{end}}>{{.}}</option>
         {{end}}
       </select>
     </label>
-    <label class="toggle"><input type="checkbox" id="memory"><span>Memory</span></label>
-    <label class="toggle"><input type="checkbox" id="tools"><span>Tools{{if .Data.ToolCount}} <span class="badge">{{.Data.ToolCount}} available</span>{{end}}</span></label>
+    <span class="divider"></span>
+    <label class="toggle">
+      <input type="checkbox" id="memory">
+      <span class="switch"></span>
+      <span>Memory</span>
+    </label>
+    <label class="toggle">
+      <input type="checkbox" id="tools">
+      <span class="switch"></span>
+      <span>Tools{{if .Data.ToolCount}} <span class="pill pill-neutral" style="margin-left:4px">{{.Data.ToolCount}}</span>{{end}}</span>
+    </label>
+    <span class="spacer"></span>
+    <button id="new-chat" class="btn btn-ghost" type="button">
+      {{template "icon_plus"}}<span>New chat</span>
+    </button>
   </div>
 
-  <div class="messages" id="messages"></div>
+  <div class="messages" id="messages">
+    <div class="chat-empty" id="chat-empty">
+      <div class="mark">
+        <svg width="96" height="96" viewBox="0 0 64 64" aria-label="Hippo" role="img">
+          <ellipse cx="16" cy="17" rx="6" ry="7" fill="var(--hippo-cyan)" stroke="var(--hippo-ink)" stroke-width="2"/>
+          <ellipse cx="48" cy="17" rx="6" ry="7" fill="var(--hippo-cyan)" stroke="var(--hippo-ink)" stroke-width="2"/>
+          <ellipse cx="16" cy="18" rx="2.6" ry="3.4" fill="var(--hippo-pink)"/>
+          <ellipse cx="48" cy="18" rx="2.6" ry="3.4" fill="var(--hippo-pink)"/>
+          <path d="M10 34 C10 22, 20 14, 32 14 C44 14, 54 22, 54 34 C54 44, 46 52, 32 52 C18 52, 10 44, 10 34 Z"
+                fill="var(--hippo-cyan)" stroke="var(--hippo-ink)" stroke-width="2" stroke-linejoin="round"/>
+          <ellipse cx="32" cy="40" rx="16" ry="10" fill="var(--hippo-cyan-soft)" stroke="var(--hippo-ink)" stroke-width="2"/>
+          <ellipse cx="26" cy="38" rx="1.6" ry="2.2" fill="var(--hippo-ink)" opacity="0.55"/>
+          <ellipse cx="38" cy="38" rx="1.6" ry="2.2" fill="var(--hippo-ink)" opacity="0.55"/>
+          <path d="M28 44 Q32 47 36 44" fill="none" stroke="var(--hippo-ink)" stroke-width="2" stroke-linecap="round"/>
+          <circle cx="23" cy="27" r="3" fill="var(--hippo-ink)"/>
+          <circle cx="41" cy="27" r="3" fill="var(--hippo-ink)"/>
+        </svg>
+      </div>
+      <div class="headline">Ask the hippo anything.</div>
+      <div class="suggestions">
+        <button type="button" class="suggestion" data-suggestion="Summarize my last 10 memories">Summarize my last 10 memories</button>
+        <button type="button" class="suggestion" data-suggestion="Show today's spend">Show today's spend</button>
+        <button type="button" class="suggestion" data-suggestion="Validate my policy">Validate my policy</button>
+      </div>
+    </div>
+  </div>
 
   <div class="composer">
-    <textarea id="prompt" placeholder="Ask the hippo..." rows="3"></textarea>
-    <button id="send" class="primary">Send</button>
+    <div class="composer-box">
+      <textarea id="prompt" placeholder="Ask the hippo anything…" rows="2"></textarea>
+      <div class="composer-bar">
+        <span class="composer-hint">⌘↵ to send</span>
+        <button id="send" class="composer-send" type="button" aria-label="Send" disabled>
+          {{template "icon_send"}}
+        </button>
+      </div>
+    </div>
+    <div class="chat-status" id="status"></div>
   </div>
-
-  <div class="status" id="status"></div>
 </div>
-{{end}}
 
 <script type="application/json" id="providers-data">
 {{- $provs := .Data.Providers -}}
 [{{range $i, $p := $provs}}{{if $i}},{{end}}{"name":"{{$p.Name}}","models":[{{range $j, $m := $p.Models}}{{if $j}},{{end}}"{{$m}}"{{end}}],"default":"{{$p.DefaultModel}}"}{{end}}]
 </script>
+{{end}}

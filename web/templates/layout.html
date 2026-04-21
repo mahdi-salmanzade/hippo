@@ -4,27 +4,90 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{{.Title}} · hippo</title>
+<link rel="preconnect" href="https://rsms.me/">
+<link rel="stylesheet" href="https://rsms.me/inter/inter.css">
 <link rel="stylesheet" href="/static/app.css">
 <script src="/static/htmx.min.js" defer></script>
 <script src="/static/app.js" defer></script>
 </head>
 <body>
-<header class="topbar">
-  <a class="brand" href="/"><strong>hippo</strong></a>
-  <nav>
-    <a href="/chat" class="{{if eq .Active "chat"}}active{{end}}">Chat</a>
-    <a href="/memory" class="{{if eq .Active "memory"}}active{{end}}">Memory</a>
-    <a href="/spend" class="{{if eq .Active "spend"}}active{{end}}">Spend</a>
-    <a href="/config" class="{{if eq .Active "config"}}active{{end}}">Config</a>
-    <a href="/policy" class="{{if eq .Active "policy"}}active{{end}}">Policy</a>
-  </nav>
-  <span class="version">v{{.Version}}</span>
+<div class="app-shell">
+<header class="app-bar">
+  <div class="app-bar-inner">
+    <a class="brand" href="/" aria-label="hippo home">
+      {{template "hippo_mark"}}
+      <span>hippo</span>
+    </a>
+    <nav class="nav-tabs">
+      <a href="/chat"   class="nav-tab{{if eq .Active "chat"}} active{{end}}">Chat</a>
+      <a href="/memory" class="nav-tab{{if eq .Active "memory"}} active{{end}}">Memory</a>
+      <a href="/spend"  class="nav-tab{{if eq .Active "spend"}} active{{end}}">Spend</a>
+      <a href="/config" class="nav-tab{{if eq .Active "config"}} active{{end}}">Config</a>
+      <a href="/policy" class="nav-tab{{if eq .Active "policy"}} active{{end}}">Policy</a>
+    </nav>
+    <span class="app-version">v{{.Version}}</span>
+  </div>
 </header>
-{{if .Flash}}<div class="flash ok">{{.Flash}}</div>{{end}}
-{{if .FlashErr}}<div class="flash err">{{.FlashErr}}</div>{{end}}
-{{range .Warnings}}<div class="flash warn">{{.}}</div>{{end}}
+
 <main>
 {{.Data}}
 </main>
+</div>
+
+<div class="flash-host">
+{{if .Flash}}<div class="flash ok" data-flash><span class="status-dot"></span>{{.Flash}}</div>{{end}}
+{{if .FlashErr}}<div class="flash err" data-flash><span class="status-dot"></span>{{.FlashErr}}</div>{{end}}
+{{range .Warnings}}<div class="flash warn" data-flash><span class="status-dot"></span>{{.}}</div>{{end}}
+</div>
 </body>
 </html>
+
+{{define "hippo_mark"}}
+<svg width="28" height="28" viewBox="0 0 64 64" role="img" aria-label="Hippo mark">
+  <ellipse cx="16" cy="17" rx="6" ry="7" fill="var(--hippo-cyan)" stroke="var(--hippo-ink)" stroke-width="2"/>
+  <ellipse cx="48" cy="17" rx="6" ry="7" fill="var(--hippo-cyan)" stroke="var(--hippo-ink)" stroke-width="2"/>
+  <ellipse cx="16" cy="18" rx="2.6" ry="3.4" fill="var(--hippo-pink)"/>
+  <ellipse cx="48" cy="18" rx="2.6" ry="3.4" fill="var(--hippo-pink)"/>
+  <path d="M10 34 C10 22, 20 14, 32 14 C44 14, 54 22, 54 34 C54 44, 46 52, 32 52 C18 52, 10 44, 10 34 Z"
+        fill="var(--hippo-cyan)" stroke="var(--hippo-ink)" stroke-width="2" stroke-linejoin="round"/>
+  <ellipse cx="32" cy="40" rx="16" ry="10" fill="var(--hippo-cyan-soft)" stroke="var(--hippo-ink)" stroke-width="2"/>
+  <ellipse cx="26" cy="38" rx="1.6" ry="2.2" fill="var(--hippo-ink)" opacity="0.55"/>
+  <ellipse cx="38" cy="38" rx="1.6" ry="2.2" fill="var(--hippo-ink)" opacity="0.55"/>
+  <path d="M28 44 Q32 47 36 44" fill="none" stroke="var(--hippo-ink)" stroke-width="2" stroke-linecap="round"/>
+  <g class="hippo-blink" style="transform-box: fill-box; transform-origin: center;">
+    <circle cx="23" cy="27" r="3" fill="var(--hippo-ink)"/>
+    <circle cx="41" cy="27" r="3" fill="var(--hippo-ink)"/>
+    <circle cx="24" cy="26" r="0.9" fill="#FFF"/>
+    <circle cx="42" cy="26" r="0.9" fill="#FFF"/>
+  </g>
+</svg>
+{{end}}
+
+{{define "hippo_head"}}
+<svg width="22" height="22" viewBox="0 0 32 32" aria-hidden="true">
+  <ellipse cx="8" cy="9" rx="3" ry="3.5" fill="var(--hippo-cyan)" stroke="var(--hippo-ink)" stroke-width="1.2"/>
+  <ellipse cx="24" cy="9" rx="3" ry="3.5" fill="var(--hippo-cyan)" stroke="var(--hippo-ink)" stroke-width="1.2"/>
+  <ellipse cx="8" cy="9.5" rx="1.2" ry="1.6" fill="var(--hippo-pink)"/>
+  <ellipse cx="24" cy="9.5" rx="1.2" ry="1.6" fill="var(--hippo-pink)"/>
+  <path d="M5 17 C5 11, 10 7, 16 7 C22 7, 27 11, 27 17 C27 22, 23 26, 16 26 C9 26, 5 22, 5 17 Z"
+    fill="var(--hippo-cyan)" stroke="var(--hippo-ink)" stroke-width="1.2"/>
+  <ellipse cx="16" cy="20" rx="8" ry="5" fill="var(--hippo-cyan-soft)" stroke="var(--hippo-ink)" stroke-width="1.2"/>
+  <ellipse cx="13" cy="19" rx="0.8" ry="1" fill="var(--hippo-ink)" opacity="0.55"/>
+  <ellipse cx="19" cy="19" rx="0.8" ry="1" fill="var(--hippo-ink)" opacity="0.55"/>
+  <path d="M14 22 Q16 23.5 18 22" fill="none" stroke="var(--hippo-ink)" stroke-width="1" stroke-linecap="round"/>
+  <circle cx="11.5" cy="13" r="1.4" fill="var(--hippo-ink)"/>
+  <circle cx="20.5" cy="13" r="1.4" fill="var(--hippo-ink)"/>
+</svg>
+{{end}}
+
+{{define "icon_send"}}<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"/></svg>{{end}}
+{{define "icon_plus"}}<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>{{end}}
+{{define "icon_search"}}<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>{{end}}
+{{define "icon_chev_r"}}<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg>{{end}}
+{{define "icon_check"}}<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 5 5L20 7"/></svg>{{end}}
+{{define "icon_trash"}}<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2M6 6v14a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V6"/></svg>{{end}}
+{{define "icon_refresh"}}<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 0 1-15 6.7L3 16M3 12a9 9 0 0 1 15-6.7L21 8M21 3v5h-5M3 21v-5h5"/></svg>{{end}}
+{{define "icon_eye"}}<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg>{{end}}
+{{define "icon_eye_off"}}<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9.9 4.2A10 10 0 0 1 12 4c6.5 0 10 7 10 7a18 18 0 0 1-3.2 4.1M6.6 6.6A18 18 0 0 0 2 11s3.5 7 10 7a10 10 0 0 0 5.4-1.6M1 1l22 22"/><path d="M14.1 14.1A3 3 0 1 1 9.9 9.9"/></svg>{{end}}
+{{define "icon_brain"}}<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 3a3 3 0 0 0-3 3c-1.7 0-3 1.3-3 3 0 1.1.6 2 1.4 2.6A3 3 0 0 0 6 18a3 3 0 0 0 3 3V3Z"/><path d="M15 3a3 3 0 0 1 3 3c1.7 0 3 1.3 3 3 0 1.1-.6 2-1.4 2.6A3 3 0 0 1 18 18a3 3 0 0 1-3 3V3Z"/></svg>{{end}}
+{{define "icon_close"}}<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>{{end}}

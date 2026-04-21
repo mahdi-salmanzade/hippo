@@ -1,52 +1,140 @@
-<h1>Spend</h1>
-
-<div class="spend-totals">
-  <div class="card">
-    <h3>Recent calls</h3>
-    <div class="big">{{formatUSDShort .Data.Total}}</div>
-    <p class="hint">Sum across rows held in the in-memory ring.</p>
-  </div>
-  <div class="card">
-    <h3>Budget</h3>
-    <div class="big">{{formatUSDShort .Data.BudgetSpent}}</div>
-    <p class="hint">Ceiling: {{formatUSDShort .Data.CeilingUSD}} · Remaining: {{formatUSDShort .Data.BudgetRemain}}</p>
+<div class="page-head-row">
+  <div>
+    <h1 class="page-title">Spend</h1>
+    <p class="page-sub">Running tally across all configured providers — local, not billed.</p>
   </div>
 </div>
 
-<section class="card">
-  <h2>By provider</h2>
-  {{if .Data.ByProvider}}
-  <table class="bars">
-    {{$total := .Data.Total}}
-    {{range .Data.ByProvider}}
-    <tr>
-      <td class="name">{{.Provider}}</td>
-      <td class="bar"><span style="width:{{formatPct .USD $total}}"></span></td>
-      <td class="val">{{formatUSDShort .USD}}</td>
-    </tr>
-    {{end}}
-  </table>
-  {{else}}<p class="hint">No spend yet.</p>{{end}}
-</section>
+{{$spark := cumulativeCost .Data.RecentCalls}}
+{{$sparkPath := sparkPath $spark 180 36}}
 
-<section class="card">
-  <h2>By task</h2>
-  {{if .Data.ByTask}}
-  <table class="bars">
-    {{$total := .Data.Total}}
-    {{range .Data.ByTask}}
-    <tr>
-      <td class="name">{{.Task}}</td>
-      <td class="bar"><span style="width:{{formatPct .USD $total}}"></span></td>
-      <td class="val">{{formatUSDShort .USD}}</td>
-    </tr>
-    {{end}}
-  </table>
-  {{else}}<p class="hint">No spend yet.</p>{{end}}
-</section>
+<div class="spend-hero">
+  <div class="card">
+    <div class="uppercase-label">Recent calls</div>
+    <div class="big">{{formatUSDShort .Data.Total}}</div>
+    <div class="muted" style="font-size: 13px; margin-top: 6px;">
+      across <span class="num">{{.Data.CallCount}}</span> {{if eq .Data.CallCount 1}}call{{else}}calls{{end}} in the buffer
+    </div>
+    <div class="hero-foot">
+      <div>
+        <div class="muted" style="font-size: 11px;">trend</div>
+        {{$delta := trendDelta $spark}}
+        {{if $delta}}
+          {{if eq (slice $delta 0 1) "+"}}
+          <div class="trend-up">{{$delta}}</div>
+          {{else}}
+          <div class="trend-down">{{$delta}}</div>
+          {{end}}
+        {{else}}
+        <div class="muted" style="font-size: 13px;">—</div>
+        {{end}}
+      </div>
+      {{if $sparkPath}}
+      <svg class="sparkline" width="180" height="36" viewBox="0 0 180 36">
+        <path d="{{$sparkPath}} L 180 36 L 0 36 Z" fill="var(--hippo-cyan)" opacity="0.12"/>
+        <path d="{{$sparkPath}}" fill="none" stroke="var(--hippo-cyan)" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      {{end}}
+    </div>
+  </div>
 
-<section class="card">
-  <h2>Recent calls</h2>
+  <div class="card ring-card">
+    <div class="ring" aria-label="Daily budget ring">
+      <svg width="140" height="140">
+        <circle cx="70" cy="70" r="65" stroke="var(--hippo-line)" stroke-width="10" fill="none"/>
+        <circle cx="70" cy="70" r="65"
+                stroke="var(--hippo-rust)" stroke-width="10" fill="none"
+                stroke-linecap="round"
+                stroke-dasharray="{{ringCirc 140 10}}"
+                stroke-dashoffset="{{ringOffset .Data.BudgetRatio 140 10}}"
+                style="transition: stroke-dashoffset 0.6s ease-out"/>
+      </svg>
+      <div class="label">
+        <div class="v">{{formatUSDShort .Data.BudgetSpent}}</div>
+        <div class="sv">spent today</div>
+      </div>
+    </div>
+    <div class="ring-meta">
+      <div class="uppercase-label">Daily budget</div>
+      <div class="budget-rows">
+        <div class="row">
+          <span class="k"><span class="swatch" style="background: var(--hippo-line-2)"></span>Ceiling</span>
+          <span class="num" style="font-weight: 500">{{formatUSDShort .Data.CeilingUSD}}</span>
+        </div>
+        <div class="row">
+          <span class="k"><span class="swatch" style="background: var(--hippo-rust)"></span>Spent</span>
+          <span class="num" style="font-weight: 500">{{formatUSDShort .Data.BudgetSpent}}</span>
+        </div>
+        <div class="row">
+          <span class="k"><span class="swatch" style="background: var(--hippo-moss)"></span>Remaining</span>
+          <span class="num" style="font-weight: 500">{{formatUSDShort .Data.BudgetRemain}}</span>
+        </div>
+      </div>
+      <div class="muted" style="font-size: 11px; margin-top: 14px; line-height: 1.5;">
+        Hard-cap will downgrade to cheapest model when reached.
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="spend-breakdowns">
+  <section class="card">
+    <header><h3>By provider</h3></header>
+    {{if .Data.ByProvider}}
+    <div class="bars">
+      {{$total := .Data.Total}}
+      {{range .Data.ByProvider}}
+      <div class="row">
+        <div class="row-head">
+          <span>{{.Provider}}</span><span class="v">{{formatUSDShort .USD}}</span>
+        </div>
+        <div class="track"><div class="fill" style="width:{{barWidth .USD $total}}; background: var(--hippo-{{providerTone .Provider}})"></div></div>
+      </div>
+      {{end}}
+    </div>
+    {{else}}<p class="muted">No spend yet.</p>{{end}}
+  </section>
+
+  <section class="card">
+    <header><h3>By task</h3></header>
+    {{if .Data.ByTask}}
+    <div class="bars">
+      {{$total := .Data.Total}}
+      {{range .Data.ByTask}}
+      <div class="row">
+        <div class="row-head">
+          <span>{{.Task}}</span><span class="v">{{formatUSDShort .USD}}</span>
+        </div>
+        <div class="track"><div class="fill" style="width:{{barWidth .USD $total}}"></div></div>
+      </div>
+      {{end}}
+    </div>
+    {{else}}<p class="muted">No spend yet.</p>{{end}}
+  </section>
+
+  <section class="card">
+    <header><h3>By model</h3></header>
+    {{if .Data.ByModel}}
+    <div class="bars">
+      {{$total := .Data.Total}}
+      {{range .Data.ByModel}}
+      <div class="row">
+        <div class="row-head">
+          <span class="mono" style="font-size: 11px">{{.Model}}</span><span class="v">{{formatUSDShort .USD}}</span>
+        </div>
+        <div class="track"><div class="fill" style="width:{{barWidth .USD $total}}"></div></div>
+      </div>
+      {{end}}
+    </div>
+    {{else}}<p class="muted">No spend yet.</p>{{end}}
+  </section>
+</div>
+
+<section class="card flush">
+  <header>
+    <h3>Recent calls</h3>
+    <span class="mono muted" style="font-size: 11px">{{len .Data.RecentCalls}} shown</span>
+  </header>
   <div hx-get="/api/recent-calls" hx-trigger="load, every 3s" hx-target="this" hx-swap="innerHTML">
     {{template "fragments/recent_calls_table.html" .Data.RecentCalls}}
   </div>

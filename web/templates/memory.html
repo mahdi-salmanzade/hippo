@@ -1,60 +1,102 @@
-<h1>Memory</h1>
+<h1 class="page-title">Memory</h1>
+<p class="page-sub">{{.Data.TotalRows}} records · local SQLite + vector store</p>
 
 <div class="memory-grid">
-  <section class="card memory-main">
-    <form method="get" action="/memory" class="memory-search">
-      <input type="text" name="q" value="{{.Data.Query}}" placeholder="Search memory…" autofocus>
-      <label><input type="radio" name="mode" value="keyword" {{if eq .Data.Mode "keyword"}}checked{{end}}> Keyword</label>
-      <label><input type="radio" name="mode" value="semantic" {{if eq .Data.Mode "semantic"}}checked{{end}}> Semantic</label>
-      <label><input type="radio" name="mode" value="hybrid" {{if eq .Data.Mode "hybrid"}}checked{{end}}> Hybrid</label>
-      <label><input type="radio" name="mode" value="recent" {{if eq .Data.Mode "recent"}}checked{{end}}> Recent</label>
-      <button type="submit" class="primary">Search</button>
+  <section class="memory-main">
+    <form method="get" action="/memory" class="memory-search-row">
+      <label class="memory-searchbox">
+        {{template "icon_search"}}
+        <input type="text" name="q" value="{{.Data.Query}}" placeholder="Search memory — content, tags, kinds…" autofocus>
+        <kbd>⌘K</kbd>
+        <button class="submit" type="submit" aria-label="Search">{{template "icon_chev_r"}}</button>
+      </label>
+      <div class="segmented" role="tablist">
+        {{$mode := .Data.Mode}}{{$q := .Data.Query}}
+        <a role="tab" href="/memory?q={{$q}}&amp;mode=keyword"  {{if eq $mode "keyword"}}aria-selected="true"{{end}}>Keyword</a>
+        <a role="tab" href="/memory?q={{$q}}&amp;mode=semantic" {{if eq $mode "semantic"}}aria-selected="true"{{end}}>Semantic</a>
+        <a role="tab" href="/memory?q={{$q}}&amp;mode=hybrid"   {{if eq $mode "hybrid"}}aria-selected="true"{{end}}>Hybrid</a>
+        <a role="tab" href="/memory?q={{$q}}&amp;mode=recent"   {{if eq $mode "recent"}}aria-selected="true"{{end}}>Recent</a>
+      </div>
     </form>
 
     {{if .Data.Records}}
-    <table class="memory-list">
-      <thead>
-        <tr><th>Time</th><th>Kind</th><th>Importance</th><th>Content</th><th></th></tr>
-      </thead>
-      <tbody>
-        {{range .Data.Records}}
-        <tr>
-          <td class="ts">{{humanTime .Timestamp}}</td>
-          <td><span class="kind kind-{{.Kind}}">{{.Kind}}</span></td>
-          <td>{{printf "%.2f" .Importance}}</td>
-          <td class="content">
-            {{.Content}}
-            {{if .Tags}}<div class="tags">{{range .Tags}}<span class="tag">{{.}}</span>{{end}}</div>{{end}}
-          </td>
-          <td>
-            <form method="post" action="/memory/record/{{.ID}}/delete"
-                  onsubmit="return confirm('Delete this record?')">
-              <button type="submit" class="danger small">Delete</button>
-            </form>
-          </td>
-        </tr>
-        {{end}}
-      </tbody>
-    </table>
+    <div class="card flush">
+      <table class="memory-list">
+        <thead>
+          <tr>
+            <th style="width: 160px">Time</th>
+            <th style="width: 90px">Kind</th>
+            <th style="width: 110px">Importance</th>
+            <th>Content</th>
+            <th style="width: 40px"></th>
+          </tr>
+        </thead>
+        <tbody>
+          {{range .Data.Records}}
+          <tr>
+            <td class="ts">{{.Timestamp.Format "2006-01-02 15:04"}}</td>
+            <td>
+              {{if eq .Kind "episodic"}}<span class="pill pill-cyan">episodic</span>
+              {{else if eq .Kind "semantic"}}<span class="pill pill-rust">semantic</span>
+              {{else if eq .Kind "working"}}<span class="pill pill-amber">working</span>
+              {{else if eq .Kind "profile"}}<span class="pill pill-moss">profile</span>
+              {{else}}<span class="pill pill-neutral">{{.Kind}}</span>{{end}}
+            </td>
+            <td>
+              <span class="signal-bars" title="{{printf "%.2f" .Importance}}">
+                <span class="{{if ge .Importance 0.125}}on{{end}}"></span>
+                <span class="{{if ge .Importance 0.375}}on{{end}}"></span>
+                <span class="{{if ge .Importance 0.625}}on{{end}}"></span>
+                <span class="{{if ge .Importance 0.875}}on{{end}}"></span>
+              </span>
+              <span class="num muted" style="margin-left:6px; font-size: 11px">{{printf "%.2f" .Importance}}</span>
+            </td>
+            <td class="content">
+              {{.Content}}
+              {{if .Tags}}
+              <div class="tags" style="margin-top: 6px">
+                {{range .Tags}}<span class="tag">{{.}}</span>{{end}}
+              </div>
+              {{end}}
+            </td>
+            <td class="row-actions">
+              <form method="post" action="/memory/record/{{.ID}}/delete"
+                    onsubmit="return confirm('Delete this record?');">
+                <button type="submit" aria-label="Delete">{{template "icon_trash"}}</button>
+              </form>
+            </td>
+          </tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+
     <nav class="memory-pagination">
-      {{if gt .Data.Page 0}}<a href="?q={{.Data.Query}}&mode={{.Data.Mode}}&page={{sub .Data.Page 1}}">← previous</a>{{end}}
-      {{if .Data.HasNext}}<a href="?q={{.Data.Query}}&mode={{.Data.Mode}}&page={{add .Data.Page 1}}">next →</a>{{end}}
+      {{if gt .Data.Page 0}}<a href="?q={{.Data.Query}}&amp;mode={{.Data.Mode}}&amp;page={{sub .Data.Page 1}}">← previous</a>{{end}}
+      {{if .Data.HasNext}}<a href="?q={{.Data.Query}}&amp;mode={{.Data.Mode}}&amp;page={{add .Data.Page 1}}">next →</a>{{end}}
     </nav>
     {{else}}
-    <p class="hint">No records match — try a different query or mode.</p>
+    <div class="card"><p class="muted">No records match — try a different query or mode.</p></div>
     {{end}}
   </section>
 
-  <aside class="card memory-sidebar">
-    <h3>Backfill</h3>
-    <div hx-get="/memory/backfill" hx-trigger="load, every 5s" hx-target="this" hx-swap="innerHTML">
-      {{template "fragments/memory_backfill.html" .Data.Backfill}}
-    </div>
+  <aside class="sidebar-stack">
+    <section class="card">
+      <header><h3>Backfill</h3></header>
+      <div hx-get="/memory/backfill" hx-trigger="load, every 5s" hx-target="this" hx-swap="innerHTML">
+        {{template "fragments/memory_backfill.html" .Data.Backfill}}
+      </div>
+    </section>
 
-    <h3>Manual prune</h3>
-    <p class="hint">Removes Working records older than 24h.</p>
-    <form method="post" action="/memory/prune">
-      <button type="submit">Prune now</button>
-    </form>
+    <section class="card">
+      <header><h3>Manual prune</h3></header>
+      <p class="muted" style="font-size: 12px; line-height: 1.5; margin: 0 0 12px;">
+        Removes Working records older than 24h.
+      </p>
+      <form method="post" action="/memory/prune">
+        <button type="submit" class="btn btn-destructive btn-sm">{{template "icon_trash"}}<span>Prune now</span></button>
+      </form>
+    </section>
   </aside>
 </div>
+

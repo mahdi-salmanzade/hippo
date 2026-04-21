@@ -1,21 +1,35 @@
 {{if .}}
 <table class="recent-calls">
 <thead>
-<tr><th>Time</th><th>Provider</th><th>Model</th><th>Task</th><th>Prompt</th><th>Tokens</th><th>Cost</th><th>ms</th></tr>
+<tr>
+  <th style="width: 80px">Time</th>
+  <th style="width: 100px">Provider</th>
+  <th>Model</th>
+  <th style="width: 90px">Task</th>
+  <th>Prompt</th>
+  <th style="width: 90px">Tokens</th>
+  <th style="width: 100px; text-align: right;">Cost</th>
+  <th style="width: 60px; text-align: right;">ms</th>
+</tr>
 </thead>
 <tbody>
 {{range .}}
 <tr>
   <td class="ts">{{humanTime .Timestamp}}</td>
-  <td>{{.Provider}}</td>
-  <td>{{.Model}}</td>
-  <td>{{.Task}}</td>
-  <td class="preview">{{.Prompt}}</td>
-  <td>{{.Usage.InputTokens}}→{{.Usage.OutputTokens}}</td>
-  <td>{{formatUSDShort .CostUSD}}</td>
-  <td>{{.LatencyMS}}</td>
+  <td>
+    {{if eq .Provider "anthropic"}}<span class="pill pill-rust pill-outline">anthropic</span>
+    {{else if eq .Provider "openai"}}<span class="pill pill-cyan pill-outline">openai</span>
+    {{else if eq .Provider "ollama"}}<span class="pill pill-moss pill-outline">ollama</span>
+    {{else}}<span class="pill pill-neutral">{{.Provider}}</span>{{end}}
+  </td>
+  <td class="model">{{.Model}}</td>
+  <td class="task">{{.Task}}</td>
+  <td class="prompt" title="{{.Prompt}}">{{.Prompt}}</td>
+  <td class="tokens">{{.Usage.InputTokens}}→{{.Usage.OutputTokens}}</td>
+  <td class="cost">{{formatUSDShort .CostUSD}}</td>
+  <td class="ms">{{.LatencyMS}}</td>
 </tr>
 {{end}}
 </tbody>
 </table>
-{{else}}<p class="hint">No calls yet.</p>{{end}}
+{{else}}<p class="muted" style="padding: 16px">No calls yet.</p>{{end}}

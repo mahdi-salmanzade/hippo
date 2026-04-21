@@ -1,10 +1,65 @@
-<h1>Routing policy</h1>
-<p class="help">Edit the YAML below. Save to validate, write to disk, and hot-swap the router.</p>
+<div class="policy-head">
+  <span class="path">~/.hippo/</span>
+  <span class="file">policy.yaml</span>
+  {{if .Data.Error}}
+  <span class="pill pill-clay"><span class="dot"></span>invalid</span>
+  {{else}}
+  <span class="pill pill-moss"><span class="dot"></span>valid</span>
+  {{end}}
+</div>
+<h1 class="page-title">Policy</h1>
+<p class="page-sub">Route shaping across providers and tasks. Hot-reloaded on save.</p>
 
-<form method="post" action="/policy" class="policy-form">
-  <label>Policy path
-    <input type="text" name="policy_path" value="{{.Data.Path}}" placeholder="~/.hippo/policy.yaml">
-  </label>
-  <textarea name="policy_yaml" rows="28" spellcheck="false">{{.Data.YAML}}</textarea>
-  <button type="submit" class="primary">Save and reload</button>
+<form method="post" action="/policy" data-dirty-form>
+  <div class="policy-grid">
+    <div class="card policy-editor flush">
+      <div class="linenums" aria-hidden="true"></div>
+      <textarea name="policy_yaml" spellcheck="false">{{.Data.YAML}}</textarea>
+    </div>
+
+    <div class="sidebar-stack">
+      <section class="card">
+        <header><h3>Path</h3></header>
+        <label class="field" style="margin: 0;">
+          <input type="text" name="policy_path" value="{{.Data.Path}}" placeholder="~/.hippo/policy.yaml" class="mono" style="font-size: 12px;">
+        </label>
+      </section>
+
+      <section class="card">
+        <header><h3>Live validation</h3></header>
+        {{if .Data.Error}}
+        <div class="validation-err">
+          <div class="head">Parse error</div>
+          <div class="body">{{.Data.Error}}</div>
+        </div>
+        {{else}}
+        <div class="muted" style="font-size: 12px; line-height: 1.5;">
+          YAML validates on save. Malformed policies are rejected before they touch disk or the router.
+        </div>
+        {{end}}
+      </section>
+
+      <section class="card">
+        <header><h3>Hot-swap</h3></header>
+        <div class="muted" style="font-size: 12px; line-height: 1.5; margin-bottom: 12px;">
+          Save rewrites <span class="mono">policy.yaml</span> and rebuilds the Brain in place. In-flight requests aren't interrupted.
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <div class="sticky-save" data-sticky-save hidden>
+    <div style="display:flex; align-items:center; gap:10px;">
+      <span class="status-dot" style="background: var(--hippo-amber);"></span>
+      You have unsaved changes.
+    </div>
+    <div style="display:flex; gap:8px;">
+      <button type="button" class="btn btn-ghost" onclick="location.reload()">Discard</button>
+      <button type="submit" class="btn btn-primary">{{template "icon_check"}}<span>Save &amp; hot-swap</span></button>
+    </div>
+  </div>
+
+  <div style="display: flex; justify-content: flex-end; margin-top: 24px;">
+    <button type="submit" class="btn btn-primary btn-lg">{{template "icon_check"}}<span>Save and reload</span></button>
+  </div>
 </form>

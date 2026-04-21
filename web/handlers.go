@@ -79,11 +79,13 @@ func (s *Server) handleHome(w http.ResponseWriter, r *http.Request) {
 
 // configPageData is what config.html expects.
 type configPageData struct {
-	Providers  []configProviderView
-	Budget     BudgetConfig
-	Memory     MemoryConfig
-	Policy     string
-	MCPServers []MCPServerView
+	Providers    []configProviderView
+	ActiveCount  int
+	DefaultRoute string // "provider:model" of the first enabled provider with a default; "" otherwise
+	Budget       BudgetConfig
+	Memory       MemoryConfig
+	Policy       string
+	MCPServers   []MCPServerView
 }
 
 // MCPServerView is the template-facing shape of one MCP server row.
@@ -170,12 +172,25 @@ func (s *Server) buildConfigView() configPageData {
 		}
 	}
 
+	active := 0
+	defaultRoute := ""
+	for _, v := range views {
+		if v.Enabled {
+			active++
+			if defaultRoute == "" && v.DefaultModel != "" {
+				defaultRoute = v.Name + ":" + v.DefaultModel
+			}
+		}
+	}
+
 	return configPageData{
-		Providers:  views,
-		Budget:     cfg.Budget,
-		Memory:     cfg.Memory,
-		Policy:     cfg.PolicyPath,
-		MCPServers: mcpViews,
+		Providers:    views,
+		ActiveCount:  active,
+		DefaultRoute: defaultRoute,
+		Budget:       cfg.Budget,
+		Memory:       cfg.Memory,
+		Policy:       cfg.PolicyPath,
+		MCPServers:   mcpViews,
 	}
 }
 
@@ -278,25 +293,40 @@ func (s *Server) handleConfigPost(w http.ResponseWriter, r *http.Request) {
 // spendPageData is the shape spend.html renders.
 type spendPageData struct {
 	Total        float64
+	CallCount    int
 	ByProvider   []ProviderSpend
 	ByTask       []TaskSpend
+	ByModel      []ModelSpend
 	RecentCalls  []CallRecord
 	CeilingUSD   float64
 	BudgetSpent  float64
 	BudgetRemain float64
+	BudgetRatio  float64 // 0..1, clamped, for the ring
 }
 
 func (s *Server) handleSpendGet(w http.ResponseWriter, r *http.Request) {
 	pd := spendPageData{
 		Total:       s.state.TotalSpend(),
+		CallCount:   s.state.CallCount(),
 		ByProvider:  s.state.SpendByProvider(),
 		ByTask:      s.state.SpendByTask(),
+		ByModel:     s.state.SpendByModel(),
 		RecentCalls: s.state.Recent(50),
 		CeilingUSD:  s.cfg.Budget.CeilingUSD,
 	}
 	if b := s.Bundle(); b != nil && b.Budget != nil {
 		pd.BudgetSpent = b.Budget.Spent()
 		pd.BudgetRemain = b.Budget.Remaining()
+	}
+	if pd.CeilingUSD > 0 {
+		ratio := pd.BudgetSpent / pd.CeilingUSD
+		if ratio < 0 {
+			ratio = 0
+		}
+		if ratio > 1 {
+			ratio = 1
+		}
+		pd.BudgetRatio = ratio
 	}
 	s.render(w, "spend.html", pageData{
 		Title:  "Spend",

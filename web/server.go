@@ -8,6 +8,7 @@ import (
 	"io"
 	"io/fs"
 	"log/slog"
+	"math"
 	"net"
 	"net/http"
 	"strings"
@@ -247,6 +248,119 @@ func parseTemplates() (*template.Template, error) {
 		"add":     func(a, b int) int { return a + b },
 		"sub":     func(a, b int) int { return a - b },
 		"toFloat": func(i int64) float64 { return float64(i) },
+		// ringOffset returns the stroke-dashoffset for a ring at the
+		// given 0..1 ratio. Circumference is 2π(size-stroke)/2 so the
+		// caller passes matching size/stroke as template ints.
+		"ringOffset": func(ratio float64, size, stroke int) string {
+			r := float64(size-stroke) / 2
+			circ := 2 * math.Pi * r
+			if ratio < 0 {
+				ratio = 0
+			}
+			if ratio > 1 {
+				ratio = 1
+			}
+			return fmt.Sprintf("%.2f", circ*(1-ratio))
+		},
+		"ringCirc": func(size, stroke int) string {
+			r := float64(size-stroke) / 2
+			return fmt.Sprintf("%.2f", 2*math.Pi*r)
+		},
+		// providerTone maps a provider name to a pill color class.
+		"providerTone": func(p string) string {
+			switch p {
+			case "anthropic":
+				return "rust"
+			case "openai":
+				return "cyan"
+			case "ollama":
+				return "moss"
+			}
+			return "neutral"
+		},
+		// barWidth returns a width percent for a value vs max, clamped
+		// so the smallest non-zero bar is still visible.
+		"barWidth": func(v, max float64) string {
+			if max <= 0 {
+				return "0%"
+			}
+			p := 100 * v / max
+			if v > 0 && p < 2 {
+				p = 2
+			}
+			return fmt.Sprintf("%.1f%%", p)
+		},
+		// sparkPath builds a polyline "d" attribute from a slice of
+		// floats, scaled to the given width/height. Returns the d
+		// string; caller splits into line vs area as needed.
+		"sparkPath": func(values []float64, w, h int) string {
+			if len(values) < 2 {
+				return ""
+			}
+			min, max := values[0], values[0]
+			for _, v := range values {
+				if v < min {
+					min = v
+				}
+				if v > max {
+					max = v
+				}
+			}
+			rg := max - min
+			if rg == 0 {
+				rg = 1
+			}
+			parts := make([]string, 0, len(values))
+			for i, v := range values {
+				x := float64(i) * float64(w) / float64(len(values)-1)
+				y := float64(h) - ((v-min)/rg)*(float64(h)-4) - 2
+				if i == 0 {
+					parts = append(parts, fmt.Sprintf("M%.1f %.1f", x, y))
+				} else {
+					parts = append(parts, fmt.Sprintf("L%.1f %.1f", x, y))
+				}
+			}
+			return strings.Join(parts, " ")
+		},
+		// trendDelta returns "+NN.N%" or "-NN.N%" for the last-vs-prev
+		// segments of a slice. Prev is the mean of all-but-last; last
+		// is the final value. Empty slice returns "".
+		// cumulativeCost turns a slice of CallRecords (newest first) into
+		// a cumulative-cost series (oldest first) for the sparkline.
+		"cumulativeCost": func(rs []CallRecord) []float64 {
+			if len(rs) == 0 {
+				return nil
+			}
+			out := make([]float64, len(rs))
+			var running float64
+			for i := range rs {
+				// rs is newest-first; walk backwards to build
+				// oldest-first cumulative series.
+				rec := rs[len(rs)-1-i]
+				running += rec.CostUSD
+				out[i] = running
+			}
+			return out
+		},
+		"trendDelta": func(values []float64) string {
+			if len(values) < 2 {
+				return ""
+			}
+			last := values[len(values)-1]
+			var prevSum float64
+			for _, v := range values[:len(values)-1] {
+				prevSum += v
+			}
+			prev := prevSum / float64(len(values)-1)
+			if prev == 0 {
+				return ""
+			}
+			d := 100 * (last - prev) / prev
+			if d >= 0 {
+				return fmt.Sprintf("+%.1f%%", d)
+			}
+			return fmt.Sprintf("%.1f%%", d)
+		},
 	}
 
 	t := template.New("").Funcs(funcs)

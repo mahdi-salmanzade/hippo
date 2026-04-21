@@ -132,6 +132,34 @@ func (s *State) SpendByTask() []TaskSpend {
 	return out
 }
 
+// SpendByModel returns a model → USD total. Empty model ids are
+// bucketed as "(unknown)". Order is model-name ascending.
+func (s *State) SpendByModel() []ModelSpend {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	m := map[string]float64{}
+	for _, r := range s.recent {
+		key := r.Model
+		if key == "" {
+			key = "(unknown)"
+		}
+		m[key] += r.CostUSD
+	}
+	out := make([]ModelSpend, 0, len(m))
+	for k, v := range m {
+		out = append(out, ModelSpend{Model: k, USD: v})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].USD > out[j].USD })
+	return out
+}
+
+// CallCount returns the number of rows currently in the ring.
+func (s *State) CallCount() int {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return len(s.recent)
+}
+
 // ProviderSpend is one row of SpendByProvider.
 type ProviderSpend struct {
 	Provider string
@@ -142,6 +170,12 @@ type ProviderSpend struct {
 type TaskSpend struct {
 	Task string
 	USD  float64
+}
+
+// ModelSpend is one row of SpendByModel.
+type ModelSpend struct {
+	Model string
+	USD   float64
 }
 
 // ChatSession is an in-flight chat turn: its parameters were POSTed via

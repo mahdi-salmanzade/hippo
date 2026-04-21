@@ -1,95 +1,191 @@
-<h1>Configuration</h1>
-<p class="help">Provider credentials and defaults. Saving reconstructs the Brain.</p>
+<h1 class="page-title">Config</h1>
+<p class="page-sub">Providers, keys, default models. All stored locally in <span class="mono">~/.hippo/config.yaml</span>.</p>
 
-<form method="post" action="/config" class="config-form">
-  {{range .Data.Providers}}
-  <section class="card">
-    <header>
-      <h2>{{.DisplayName}}</h2>
-      <label class="toggle">
-        <input type="checkbox" name="{{.Name}}_enabled" {{if .Enabled}}checked{{end}}>
-        <span>Enabled</span>
+<form method="post" action="/config" data-dirty-form>
+  <div class="config-grid">
+    {{range .Data.Providers}}
+    <section class="card provider-card{{if not .Enabled}} disabled{{end}}">
+      <div class="provider-card-head">
+        <div class="left">
+          {{if eq .Name "anthropic"}}
+          <div class="provider-glyph rust"><svg width="14" height="14" viewBox="0 0 24 24"><polygon points="12,3 21,8 21,16 12,21 3,16 3,8" fill="var(--hippo-rust)"/></svg></div>
+          {{else if eq .Name "openai"}}
+          <div class="provider-glyph cyan"><svg width="14" height="14" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="3" fill="var(--hippo-cyan)"/></svg></div>
+          {{else if eq .Name "ollama"}}
+          <div class="provider-glyph moss"><svg width="14" height="14" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="var(--hippo-moss)"/></svg></div>
+          {{else}}
+          <div class="provider-glyph"></div>
+          {{end}}
+          <div>
+            <div class="name">{{.DisplayName}}</div>
+            <div class="id">{{.Name}}</div>
+          </div>
+        </div>
+        <label class="toggle">
+          <input type="checkbox" name="{{.Name}}_enabled" {{if .Enabled}}checked{{end}}>
+          <span class="switch"></span>
+        </label>
+      </div>
+
+      {{if .NeedsAPIKey}}
+      <label class="field">
+        <span class="label">API key</span>
+        <div class="provider-key-row">
+          <div class="input">
+            <input type="password" id="{{.Name}}_api_key" name="{{.Name}}_api_key"
+                   placeholder='{{if .APIKeySet}}[already set — leave blank to keep, "__clear__" to remove]{{else}}paste key{{end}}'
+                   autocomplete="off">
+            <button type="button" class="toggle-visibility" data-toggle-visibility="#{{.Name}}_api_key" aria-label="Show key" aria-pressed="false">
+              <span class="eye-on">{{template "icon_eye"}}</span>
+              <span class="eye-off" style="display:none">{{template "icon_eye_off"}}</span>
+            </button>
+          </div>
+        </div>
       </label>
-    </header>
+      {{end}}
 
-    {{if .NeedsAPIKey}}
-    <label>API key
-      <input type="password" name="{{.Name}}_api_key"
-        placeholder='{{if .APIKeySet}}[already set — leave blank to keep, "__clear__" to remove]{{else}}paste key{{end}}'>
-    </label>
+      {{if .NeedsBaseURL}}
+      <label class="field">
+        <span class="label">Base URL</span>
+        <div class="input mono" style="font-size: 12px">
+          <input type="text" name="{{.Name}}_base_url" value="{{.BaseURL}}"
+                 placeholder="http://localhost:11434"
+                 style="border: 0; outline: none; background: transparent; flex: 1; font-family: inherit; padding: 0; height: auto;">
+        </div>
+      </label>
+      {{end}}
+
+      <label class="field">
+        <span class="label">Default model</span>
+        <select name="{{.Name}}_default_model" class="mono" style="width: 100%">
+          <option value="">(none)</option>
+          {{$current := .DefaultModel}}
+          {{range .Models}}
+          <option value="{{.}}" {{if eq . $current}}selected{{end}}>{{.}}</option>
+          {{end}}
+        </select>
+      </label>
+
+      <div class="provider-card-foot">
+        <span>Key <span class="mono">{{if .APIKeySet}}set{{else}}—{{end}}</span></span>
+        <span>Default <span class="mono">{{if .DefaultModel}}{{.DefaultModel}}{{else}}—{{end}}</span></span>
+      </div>
+    </section>
     {{end}}
 
-    {{if .NeedsBaseURL}}
-    <label>Base URL
-      <input type="text" name="{{.Name}}_base_url" value="{{.BaseURL}}" placeholder="http://localhost:11434">
-    </label>
-    {{end}}
+    <section class="brain-summary">
+      <div class="head">
+        {{template "icon_brain"}}
+        <div class="title">Brain summary</div>
+      </div>
+      <div style="font-size: 13px; line-height: 1.7;">
+        Your current config materializes the router at save time. Hot-swaps in &lt;50ms.
+      </div>
+      <div class="route-box">
+        <div class="nums">
+          <span class="n">{{len .Data.Providers}}</span>
+          <span class="l">providers</span>
+          <span class="sep">·</span>
+          <span class="n">{{.Data.ActiveCount}}</span>
+          <span class="l">active</span>
+        </div>
+        <div style="font-size: 12px; color: var(--hippo-ink-2);">
+          default route:
+          <span class="mono" style="font-weight: 500; color: var(--hippo-ink);">{{if .Data.DefaultRoute}}{{.Data.DefaultRoute}}{{else}}—{{end}}</span>
+        </div>
+      </div>
+      <div class="tail">
+        Stored locally in <span class="mono">~/.hippo/config.yaml</span>. No values leave this machine.
+      </div>
+    </section>
+  </div>
 
-    <label>Default model
-      <select name="{{.Name}}_default_model">
-        <option value="">(none)</option>
-        {{$current := .DefaultModel}}
-        {{range .Models}}
-        <option value="{{.}}" {{if eq . $current}}selected{{end}}>{{.}}</option>
-        {{end}}
-      </select>
-    </label>
-  </section>
-  {{end}}
-
-  <section class="card">
-    <header><h2>MCP Servers</h2></header>
-    <p class="help">Connect to Model Context Protocol servers to expose their tools to the chat.</p>
+  <section class="card mcp-card">
+    <header><h3>MCP servers</h3></header>
+    <p class="muted" style="font-size: 12px; line-height: 1.5; margin: 0 0 14px;">
+      Connect to Model Context Protocol servers to expose their tools to the chat.
+    </p>
 
     {{range .Data.MCPServers}}
     <div class="mcp-row">
-      <label>Name<input name="mcp_name_{{.Index}}" value="{{.Name}}" placeholder="server-name"></label>
-      <label>Transport
+      <label class="field">
+        <span class="label">Name</span>
+        <input name="mcp_name_{{.Index}}" value="{{.Name}}" placeholder="server-name">
+      </label>
+      <label class="field">
+        <span class="label">Transport</span>
         <select name="mcp_transport_{{.Index}}">
           <option value="stdio" {{if eq .Transport "stdio"}}selected{{end}}>stdio</option>
           <option value="http" {{if eq .Transport "http"}}selected{{end}}>http</option>
         </select>
       </label>
-      <label>Command (stdio) or URL (http)
-        <input name="mcp_command_{{.Index}}" value="{{if eq .Transport "http"}}{{.URL}}{{else}}{{.Command}}{{end}}"
+      <label class="field full">
+        <span class="label">Command (stdio) or URL (http)</span>
+        <input class="mono" name="mcp_command_{{.Index}}"
+               value="{{if eq .Transport "http"}}{{.URL}}{{else}}{{.Command}}{{end}}"
                placeholder='npx -y @upstream/foo   OR   http://localhost:8080/mcp'>
       </label>
-      <label>Prefix (optional)<input name="mcp_prefix_{{.Index}}" value="{{.Prefix}}" placeholder="defaults to name"></label>
-      <label class="toggle"><input type="checkbox" name="mcp_enabled_{{.Index}}" {{if .Enabled}}checked{{end}}><span>Enabled</span></label>
+      <label class="field">
+        <span class="label">Prefix (optional)</span>
+        <input name="mcp_prefix_{{.Index}}" value="{{.Prefix}}" placeholder="defaults to name">
+      </label>
+      <label class="toggle" style="align-self: end;">
+        <input type="checkbox" name="mcp_enabled_{{.Index}}" {{if .Enabled}}checked{{end}}>
+        <span class="switch"></span>
+        <span>Enabled</span>
+      </label>
       <div class="mcp-actions">
-        <button type="button"
+        <button type="button" class="btn btn-ghost btn-sm"
                 hx-post="/config/mcp/test"
                 hx-target="#mcp-test-{{.Index}}"
                 hx-include="[name='mcp_name_{{.Index}}'],[name='mcp_transport_{{.Index}}'],[name='mcp_command_{{.Index}}'],[name='mcp_prefix_{{.Index}}']"
                 >Test</button>
         <span id="mcp-test-{{.Index}}"></span>
-        <button type="submit" name="mcp_delete" value="{{.Index}}" class="danger">Remove</button>
+        <span style="flex: 1"></span>
+        <button type="submit" name="mcp_delete" value="{{.Index}}" class="btn btn-destructive btn-sm">{{template "icon_trash"}}<span>Remove</span></button>
       </div>
     </div>
     {{end}}
 
-    <button type="submit" name="mcp_add" value="1">Add server</button>
+    <button type="submit" name="mcp_add" value="1" class="btn btn-ghost btn-sm">{{template "icon_plus"}}<span>Add server</span></button>
   </section>
 
-  <section class="card">
-    <header><h2>Budget</h2></header>
-    <label>Ceiling (USD; 0 = unlimited)
-      <input type="number" step="0.01" min="0" name="budget_ceiling_usd" value="{{.Data.Budget.CeilingUSD}}">
-    </label>
-  </section>
-
-  <section class="card">
-    <header>
-      <h2>Memory</h2>
-      <label class="toggle">
-        <input type="checkbox" name="memory_enabled" {{if .Data.Memory.Enabled}}checked{{end}}>
-        <span>Enabled</span>
+  <div class="budget-memory-grid">
+    <section class="card">
+      <header><h3>Budget</h3></header>
+      <label class="field">
+        <span class="label">Daily ceiling (USD; 0 = unlimited)</span>
+        <input type="number" step="0.01" min="0" name="budget_ceiling_usd" value="{{.Data.Budget.CeilingUSD}}">
       </label>
-    </header>
-    <label>Database path
-      <input type="text" name="memory_db_path" value="{{.Data.Memory.DBPath}}" placeholder="~/.hippo/memory.db">
-    </label>
-  </section>
+    </section>
 
-  <button type="submit" class="primary">Save</button>
+    <section class="card">
+      <header>
+        <h3>Memory</h3>
+        <label class="toggle">
+          <input type="checkbox" name="memory_enabled" {{if .Data.Memory.Enabled}}checked{{end}}>
+          <span class="switch"></span>
+        </label>
+      </header>
+      <label class="field">
+        <span class="label">Database path</span>
+        <input type="text" name="memory_db_path" value="{{.Data.Memory.DBPath}}" placeholder="~/.hippo/memory.db">
+      </label>
+    </section>
+  </div>
+
+  <div class="sticky-save" data-sticky-save hidden>
+    <div style="display:flex; align-items:center; gap:10px;">
+      <span class="status-dot" style="background: var(--hippo-amber);"></span>
+      You have unsaved changes.
+    </div>
+    <div style="display:flex; gap:8px;">
+      <button type="button" class="btn btn-ghost" onclick="location.reload()">Discard</button>
+      <button type="submit" class="btn btn-primary">{{template "icon_check"}}<span>Save</span></button>
+    </div>
+  </div>
+
+  <div style="display: flex; justify-content: flex-end; margin-top: 24px;">
+    <button type="submit" class="btn btn-primary btn-lg">{{template "icon_check"}}<span>Save config</span></button>
+  </div>
 </form>

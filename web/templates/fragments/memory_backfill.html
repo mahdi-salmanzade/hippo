@@ -1,15 +1,25 @@
 {{if not .HasEmbedder}}
-<p class="hint">No embedder configured. Enable Ollama on the Config page and install an embedding model (default: <code>nomic-embed-text</code>) to unlock semantic recall.</p>
-<p class="hint">Total records: {{.Total}}</p>
-{{else}}
-<p class="hint">
-  {{.Embedded}} / {{.Total}} embedded
-  {{if .Pending}}({{.Pending}} pending){{end}}
+<div style="display:flex; align-items:center; justify-content:space-between; margin-bottom: 8px;">
+  <span class="pill pill-neutral"><span class="dot"></span>no embedder</span>
+</div>
+<p class="muted" style="font-size: 12px; line-height: 1.5; margin: 0 0 6px;">
+  Enable Ollama and install an embedding model (default: <code>nomic-embed-text</code>) to unlock semantic recall.
 </p>
+<div class="backfill-number">{{.Total}}</div>
+<div class="muted" style="font-size: 12px;">total records indexed</div>
+{{else}}
+<div style="display:flex; align-items:center; justify-content:space-between; margin-bottom: 8px;">
+  {{if .Running}}
+  <span class="pill pill-amber"><span class="dot"></span>Running</span>
+  {{else}}
+  <span class="pill pill-moss"><span class="dot"></span>Ready</span>
+  {{end}}
+</div>
+<div class="backfill-number">{{.Embedded}} <span class="muted" style="font-size:14px; font-weight:400;">/ {{.Total}}</span></div>
+<div class="muted" style="font-size: 12px;">embedded{{if .Pending}} · {{.Pending}} pending{{end}}</div>
 {{if gt .Total 0}}
-<div class="bar"><span style="width:{{formatPct (toFloat .Embedded) (toFloat .Total)}}"></span></div>
+<div class="bar-slim"><span style="width:{{formatPct (toFloat .Embedded) (toFloat .Total)}}"></span></div>
 {{end}}
-{{if .Running}}<p class="hint">Running…</p>{{end}}
-{{if .LastRunAt}}<p class="hint">Last run: {{.LastRunAt}}</p>{{end}}
-{{if .LastError}}<p class="err">{{.LastError}}</p>{{end}}
+{{if .LastRunAt}}<div class="muted" style="font-size: 11px; margin-top: 8px;">Last run: <span class="mono">{{.LastRunAt}}</span></div>{{end}}
+{{if .LastError}}<div class="validation-err" style="margin-top: 10px;"><div class="body">{{.LastError}}</div></div>{{end}}
 {{end}}
