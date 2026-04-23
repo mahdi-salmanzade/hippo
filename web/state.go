@@ -284,12 +284,16 @@ func (s *State) SpendByProvider() []ProviderSpend {
 	return out
 }
 
-// SpendByTask returns a task → USD total.
+// SpendByTask returns a task → USD total. Pending rows are skipped so the
+// breakdown reflects completed turns only, matching SpendByProvider.
 func (s *State) SpendByTask() []TaskSpend {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	m := map[string]float64{}
 	for _, r := range s.recent {
+		if r.Pending {
+			continue
+		}
 		key := r.Task
 		if key == "" {
 			key = "(none)"
@@ -305,12 +309,16 @@ func (s *State) SpendByTask() []TaskSpend {
 }
 
 // SpendByModel returns a model → USD total. Empty model ids are
-// bucketed as "(unknown)". Order is model-name ascending.
+// bucketed as "(unknown)". Pending rows are skipped so the breakdown
+// reflects completed turns only. Order is model-name ascending.
 func (s *State) SpendByModel() []ModelSpend {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	m := map[string]float64{}
 	for _, r := range s.recent {
+		if r.Pending {
+			continue
+		}
 		key := r.Model
 		if key == "" {
 			key = "(unknown)"

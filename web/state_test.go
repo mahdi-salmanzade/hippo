@@ -106,6 +106,27 @@ func TestSpendAggregations(t *testing.T) {
 	}
 }
 
+func TestSpendBreakdownsSkipPendingRows(t *testing.T) {
+	s := NewState()
+	s.Record(CallRecord{Provider: "anthropic", Model: "claude-sonnet-4-6", Task: "reason", CostUSD: 0.10})
+	// In-flight turn: Task is populated, Provider/Model are not,
+	// CostUSD is 0. Must not pollute the task/model breakdowns.
+	s.Record(CallRecord{Task: "generate", Pending: true})
+
+	byTask := s.SpendByTask()
+	if len(byTask) != 1 || byTask[0].Task != "reason" {
+		t.Errorf("SpendByTask included pending row: %+v", byTask)
+	}
+	byModel := s.SpendByModel()
+	if len(byModel) != 1 || byModel[0].Model != "claude-sonnet-4-6" {
+		t.Errorf("SpendByModel included pending row: %+v", byModel)
+	}
+	byProv := s.SpendByProvider()
+	if len(byProv) != 1 || byProv[0].Provider != "anthropic" {
+		t.Errorf("SpendByProvider included pending row: %+v", byProv)
+	}
+}
+
 func TestConcurrentRecord(t *testing.T) {
 	s := NewState()
 	var wg sync.WaitGroup
