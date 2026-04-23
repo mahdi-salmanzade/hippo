@@ -14,14 +14,11 @@
 hippo is a pure-Go LLM client you import as a library or run as a standalone
 binary. It unifies Anthropic, OpenAI, and Ollama behind one API; persists
 typed memory in SQLite; enforces a USD budget; and speaks Model Context
-Protocol out of the box. Everything ships in one 19 MB binary, CGO-free,
-with a minimum dependency tree.
+Protocol out of the box. Everything ships in one 13 MB stripped binary,
+CGO-free, with a minimum dependency tree.
 
-> **Status: v1.0.0-beta.** Providers, streaming, tools, MCP, typed
-> memory with semantic recall, cost-aware routing, and the embedded
-> web UI are all in. The public API is frozen pending a final v1.0
-> tag - breaking changes now require a deprecation cycle. See the
-> [changelog](./CHANGELOG.md).
+> **Status: v1.0.0.** Public API frozen; breaking changes from this
+> point require a deprecation cycle. See the [changelog](./CHANGELOG.md).
 
 ## Quick start (library)
 
