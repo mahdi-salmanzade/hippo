@@ -1,9 +1,9 @@
 // Package web implements hippo's embedded HTTP UI: a single-binary web
 // frontend covering configuration, spend, policy, and a chat playground.
 //
-// All templates and static assets are compiled into the binary via
-// go:embed so the server has zero runtime filesystem dependencies beyond
-// the user's config and memory database.
+// All templates and static assets are compiled into the binary with
+// the `//go:embed` directive so the server has zero runtime filesystem
+// dependencies beyond the user's config and memory database.
 package web
 
 import (
