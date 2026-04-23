@@ -247,7 +247,7 @@ Chronological via `git log` — eight commits over ~5 hours.
 
 `go test ./...` → all packages green at this snapshot. Notable coverage:
 
-- `web/`: **33 tests** — handlers, MCP, chat store (round-trip + meta +
+- `web/`: **56 tests** — handlers, MCP, chat store (round-trip + meta +
   auto-title + cascade delete + rename), state (ring cap + pending flow +
   persistence round-trip + seeded loading), spend tool (shape + pending +
   summary), built-in-tool wiring, memory search guards, policy read paths.
