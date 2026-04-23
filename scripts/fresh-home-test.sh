@@ -8,7 +8,7 @@
 #   1. `hippo init` creates ~/.hippo/config.yaml with mode 0600 and
 #      all three providers present and disabled.
 #   2. `hippo serve` binds 127.0.0.1 within 5 seconds, serves /config
-#      as HTML containing "MCP Servers" plus every provider name
+#      as HTML containing "MCP servers" plus every provider name
 #      (Anthropic, OpenAI, Ollama).
 #   3. SIGTERM shuts the server down cleanly within 5 seconds with
 #      exit code 0.
@@ -123,7 +123,7 @@ fi
 log "serve: bound"
 
 body="$(curl -sf "http://127.0.0.1:$server_port/config")"
-for needle in "MCP Servers" "Anthropic" "OpenAI" "Ollama"; do
+for needle in "MCP servers" "Anthropic" "OpenAI" "Ollama"; do
     echo "$body" | grep -q "$needle" || fail "/config body missing '$needle'"
 done
 log "serve: /config content ok"
