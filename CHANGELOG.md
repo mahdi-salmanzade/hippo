@@ -3,6 +3,96 @@
 All notable changes are recorded here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/). Semantic versioning.
 
+## v1.0.0 - 2026-04-23
+
+First stable release. Public API frozen; breaking changes from this
+point require a deprecation cycle.
+
+### Since v1.0.0-beta
+
+- **Fix**: `web.State.SpendByTask` / `SpendByModel` now skip pending
+  (in-flight) rows, matching `SpendByProvider` and the `hippo_spend`
+  tool's "breakdowns across completed turns" contract. Pending rows
+  have `CostUSD = 0` so sums were unaffected; the defect was the
+  polluted task/model key set. (`e98a914`)
+- **Cleanup**: remove unused `workingHalfLifeHours` /
+  `episodicHalfLifeHours` / `profileHalfLifeHours` constants in
+  `memory/sqlite/recall.go`; decay math lives entirely in the SQL
+  fragment. (`954bfc9`)
+- **Cleanup**: reword the `web/config.go` package doc so staticcheck
+  stops flagging prose as a malformed `//go:embed` directive.
+  (`e96352a`)
+- **Test**: fix polling loop in `brain_tools_test.go` that exited
+  after one iteration instead of polling for 2s. (`156b0ec`)
+- **Docs**: `CurrentState.md` snapshot of the beta cut (`5f93e21`);
+  correct the web test count in that file (`f472b1f`); README
+  accuracy sweep — status line, stripped-binary size. (`eb2537d`)
+
+### Since v0.2.0 (incorporating v1.0.0-beta)
+
+- `memory/sqlite`: OR-join FTS tokens so multi-word keyword queries
+  recall. (`173ba28`)
+- `web`: redesign UI with hippo design system — tokens, primitives,
+  all five pages rebuilt; polish pass on the design port. (`1dde176`,
+  `c84b06d`)
+- `web`: conversation history, markdown rendering, built-in tools
+  (`hippo_spend`, `hippo_memory_search`, `hippo_policy_read`); router
+  respects `Call.Model`. (`7fdae23`)
+- `web`: chat history drawer with SQLite persistence. (`7995a02`)
+- `web`: persist turn metadata; make spend tool see in-flight calls.
+  (`3cb4bce`)
+- `web`: split completed vs pending in `hippo_spend` output.
+  (`8da76ef`)
+- `web`: pre-format `hippo_spend` summary so answers stay consistent
+  across Opus runs. (`5ddb92f`)
+- `web`: persist spend across restarts via `~/.hippo/spend.json`;
+  budget re-seeded from the loaded ring on startup. (`67a880b`)
+
+### Carrying forward from v0.2.0
+
+- Providers: Anthropic (Messages API), OpenAI (Responses API),
+  Ollama — streaming, tool use, unified `StreamChunk` events.
+- Typed memory with semantic recall: `MemoryQuery.Semantic`,
+  `HybridWeight`, `TemporalExpansion`. Pure-Go cosine; FTS5 keyword;
+  nucleus temporal expansion pulls conversation-adjacent turns at
+  half-score.
+- Lazy embedding backfill worker; importance decay (Working 24h,
+  Episodic 30d, Profile never).
+- Auto-prune worker with per-kind policy.
+- Schema migration framework; v0.1.0 databases upgrade in-place.
+- Embedder interface with Ollama implementation (`nomic-embed-text`,
+  768-dim).
+- Cost-aware routing: YAML policy with `prefer` / `fallback` per
+  task, privacy tiers, per-task cost caps, mtime-polled hot-reload.
+- MCP client: stdio and Streamable HTTP transports, protocol
+  `2025-06-18`, exponential-backoff reconnect.
+- Embedded web UI: chat, spend dashboard, config, policy editor,
+  MCP server management. No Node, no build step.
+- CLI: `hippo serve`, `hippo init`, `hippo version`.
+
+### Known limitations carried into v1.0.0
+
+- Only Ollama exposes an `Embedder` today; cloud embedders slot in as
+  additional `hippo.Embedder` implementations without API changes.
+- Full-scan cosine similarity stays cheap up to ~10K records; past
+  that an ANN index is a future conversation.
+- Gemini and OpenRouter providers are scaffolded in `providers/` but
+  not implemented (planned v1.1).
+- MCP prompts and resources aren't supported — tools only.
+- Per-conversation memory scoping not implemented; memory shares a
+  single namespace per install.
+- Config YAML round-trip strips inline comments; a fixed header is
+  regenerated on every save. See QUESTIONS.md Q9.1.
+- MCP servers that fail the initial 10-second connect log+skip at
+  bundle construction; the Client's background reconnect loop
+  recovers them, but the Brain isn't rebuilt automatically when they
+  come online. See QUESTIONS.md Q10.3.
+
+### Binary size
+
+- 13 MB stripped (`CGO_ENABLED=0 go build -ldflags "-s -w"`); 19 MB
+  with symbols and path-trim. No new dependencies since v0.1.0.
+
 ## v1.0.0-beta - 2026-04-21
 
 Beta promotion. No functional changes from v0.2.0 - this tag freezes
