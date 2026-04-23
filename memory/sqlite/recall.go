@@ -12,23 +12,6 @@ import (
 	"github.com/mahdi-salmanzade/hippo"
 )
 
-// Decay parameters. Half-lives are hours; zero means "no decay"
-// (used by the Profile kind so long-term profile facts don't fade).
-//
-// The multiplier (1 + ln(1+access_count)/10) rewards frequently-recalled
-// records without letting the access boost dominate base importance
-// for cold records; divisor of 10 keeps the boost under ~1.7× even at
-// thousands of hits.
-//
-// Changing these constants changes ranking for every query, so
-// promotions to the public surface should happen behind an Option;
-// for v1.0 they're tuned defaults.
-const (
-	workingHalfLifeHours  = 24.0     // Working memory fades over a day
-	episodicHalfLifeHours = 720.0    // Episodic fades over 30 days
-	profileHalfLifeHours  = 0.0      // Profile never decays (sentinel)
-)
-
 // effectiveImportanceExpr returns a SQL fragment that computes the
 // decayed importance. Inlined into every SELECT that ranks by or
 // filters on importance.
@@ -38,10 +21,14 @@ const (
 // default; if a future driver drops it, switch to exp(-age * ln(2) /
 // half_life) which is algebraically identical.
 //
-// Kind-specific half-lives are encoded as a CASE so one query handles
-// all three kinds. Profile records bypass decay entirely.
-// access_count is NULL on pre-Pass-11 rows until the first Recall
-// bumps it - COALESCE keeps the arithmetic safe either way.
+// Kind-specific half-lives (Working 24h, Episodic 720h, Profile 0 =
+// no decay) are encoded as a CASE so one query handles all three
+// kinds. Profile records bypass decay entirely. access_count is NULL
+// on pre-Pass-11 rows until the first Recall bumps it - COALESCE
+// keeps the arithmetic safe either way. The access-count multiplier
+// (1 + ln(1+access_count)/10) rewards frequently-recalled records
+// without letting the boost dominate for cold records; divisor 10
+// caps the boost under ~1.7× even at thousands of hits.
 const effectiveImportanceExpr = `
 (importance *
   CASE kind
