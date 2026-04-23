@@ -780,12 +780,12 @@ drain:
 		}
 	}
 	const slack = 2
-	for time.Now().Before(time.Now().Add(2 * time.Second)) {
+	settleDeadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(settleDeadline) {
 		if runtime.NumGoroutine()-baseline <= slack {
 			return
 		}
 		time.Sleep(20 * time.Millisecond)
-		break
 	}
 	// Lenient - this test's primary assertion is channel close.
 }
