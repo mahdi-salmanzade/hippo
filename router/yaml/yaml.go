@@ -30,7 +30,8 @@ import (
 
 // pollInterval is how often the watch goroutine stats the policy
 // file. It is a var (not const) so tests can compress it to
-// milliseconds. Production code must not mutate it.
+// milliseconds. Production code must not mutate it. Each router
+// snapshots it in newRouter; set it before calling Load, not after.
 var pollInterval = 2 * time.Second
 
 //go:embed default_policy.yaml
@@ -119,6 +120,11 @@ type router struct {
 	logger   *slog.Logger
 	stop     chan struct{}
 	stopOnce sync.Once
+	// pollInterval is snapshotted from the package var at construction
+	// so the watcher goroutine never reads it directly. Tests mutate
+	// that var and restore it from t.Cleanup; reading it inside the
+	// goroutine left the two unsynchronised.
+	pollInterval time.Duration
 	// lastMtime is the last-observed mtime of the policy file;
 	// guarded by the watcher goroutine (only one writer).
 	lastMtime time.Time
@@ -166,8 +172,9 @@ func newRouter(data []byte, opts ...Option) (*router, error) {
 		return nil, err
 	}
 	r := &router{
-		logger: slog.New(slog.NewTextHandler(discardWriter{}, nil)),
-		stop:   make(chan struct{}),
+		logger:       slog.New(slog.NewTextHandler(discardWriter{}, nil)),
+		stop:         make(chan struct{}),
+		pollInterval: pollInterval,
 	}
 	for _, o := range opts {
 		o(r)
@@ -202,7 +209,7 @@ func (r *router) Close() error {
 // and the previous policy remains authoritative - a broken edit
 // should not take down a running Brain.
 func (r *router) watchLoop() {
-	ticker := time.NewTicker(pollInterval)
+	ticker := time.NewTicker(r.pollInterval)
 	defer ticker.Stop()
 	for {
 		select {
