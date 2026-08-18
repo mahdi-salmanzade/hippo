@@ -40,3 +40,9 @@ hippo.db-shm
 .idea/
 *.swp
 .DS_Store
+
+# Local AI assistant context
+CLAUDE.md
+
+# compiled binary (repo root only, not cmd/hippo/)
+/hippo
