@@ -5,6 +5,7 @@
 //	hippo serve     start the embedded web UI on 127.0.0.1:7844
 //	hippo version   print version + build info
 //	hippo init      create ~/.hippo/config.yaml with defaults
+//	hippo setup     check prerequisites (ollama daemon, embedder model, config)
 //
 // Flags are parsed with stdlib flag - no cobra dependency. hippo's CLI
 // surface is intentionally minimal and Pass 9 is the first pass that
@@ -29,6 +30,8 @@ func main() {
 		err = runServe(args)
 	case "init":
 		err = runInit(args)
+	case "setup":
+		err = runSetup(args)
 	case "version":
 		err = runVersion(args)
 	case "-h", "--help", "help":
@@ -53,6 +56,7 @@ Usage:
 Subcommands:
   serve    start the web UI
   init     create ~/.hippo/config.yaml with defaults
+  setup    check ollama + embedder prerequisites (run first time)
   version  print version, commit, and Go version
 
 Run "hippo <subcommand> --help" for per-command flags.`)
